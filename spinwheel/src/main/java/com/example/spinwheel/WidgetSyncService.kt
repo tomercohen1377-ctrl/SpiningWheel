@@ -240,15 +240,6 @@ class WidgetSyncService(private val context: Context) {
         }
     }
 
-    /** Reads back [SpinWheelAssets] saved during the last successful sync, or null. */
-    fun getSavedAssets(): SpinWheelAssets? {
-        val bg    = prefs.getString(KEY_URL_BG,    null) ?: return null
-        val wheel = prefs.getString(KEY_URL_WHEEL, null) ?: return null
-        val frame = prefs.getString(KEY_URL_FRAME, null) ?: return null
-        val spin  = prefs.getString(KEY_URL_SPIN,  null) ?: return null
-        return SpinWheelAssets(bg, wheel, frame, spin)
-    }
-
     fun getLastFetchTime(): Long = prefs.getLong(KEY_LAST_FETCH_TIME, 0L)
 
     fun clearCache() {

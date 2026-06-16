@@ -28,7 +28,6 @@
         <!--
           GlanceAppWidgetReceiver — must be declared in the app manifest so the
           Android launcher discovers the widget at install time.
-          (The library manifest alone is not sufficient for widget discovery.)
         -->
         <receiver
             android:name="com.example.spinwheel.SpinWheelWidgetReceiver"

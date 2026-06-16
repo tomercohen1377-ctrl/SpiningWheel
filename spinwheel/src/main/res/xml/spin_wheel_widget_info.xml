@@ -6,13 +6,13 @@
                        The system calls onUpdate() every 12 h to refresh
                        Firebase Remote Config + re-download changed assets.
                        Minimum allowed by Android is 1800000 ms (30 min).
+  initialLayout      → omitted; Glance renders its own initial composable.
 -->
 <appwidget-provider
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="250dp"
     android:minHeight="250dp"
     android:updatePeriodMillis="43200000"
-    android:initialLayout="@layout/widget_spin_wheel"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:description="@string/spin_wheel_widget_description" />

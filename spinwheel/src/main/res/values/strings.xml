@@ -1,8 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="spin_wheel_widget_description">Spin Wheel Widget</string>
-    <string name="widget_bg_desc">Spin wheel background</string>
-    <string name="widget_wheel_desc">Spin wheel</string>
-    <string name="widget_frame_desc">Spin wheel frame</string>
-    <string name="widget_spin_desc">Spin button – tap to spin</string>
 </resources>

@@ -39,7 +39,7 @@ dependencies {
     // Spin Wheel library module (widget + sync service)
     implementation(project(":spinwheel"))
 
-    // Firebase — BOM pins all SDK versions; individual libs have no explicit version
+    // Firebase — BOM pins all SDK versions
     implementation(platform(libs.firebase.bom))
     implementation("com.google.firebase:firebase-config")
     implementation("com.google.firebase:firebase-analytics")
