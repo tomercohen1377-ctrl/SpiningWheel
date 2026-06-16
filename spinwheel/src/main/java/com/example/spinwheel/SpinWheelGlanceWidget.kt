@@ -3,6 +3,7 @@ package com.example.spinwheel
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.util.TypedValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -57,9 +58,25 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
         // Load cached bitmaps (file I/O) before entering composable scope
         val sync = WidgetSyncService(context)
         val bgBitmap    = sync.getCachedBitmap(FILE_BG)
-        val wheelBitmap = sync.getCachedBitmap(FILE_WHEEL)
         val frameBitmap = sync.getCachedBitmap(FILE_FRAME)
         val spinBitmap  = sync.getCachedBitmap(FILE_SPIN)
+
+        // Pre-scale the wheel bitmap to the display size (260 dp).
+        //
+        // rotateBitmap() is called on EVERY animation frame (50 times).
+        // Without scaling, it rotates the full-resolution source bitmap each
+        // time — e.g. a 600×600 source = 1.44 MB per frame = 72 MB of GC
+        // pressure over the animation.  Scaling to ~260 dp first reduces the
+        // per-frame bitmap to ~400×400 = 0.61 MB → 6× less memory churn.
+        val rawWheel = sync.getCachedBitmap(FILE_WHEEL)
+        val density  = context.resources.displayMetrics.density
+        val targetPx = (260f * density).toInt().coerceAtLeast(64)
+        val wheelBitmap = rawWheel?.let { bmp ->
+            if (bmp.width > targetPx) {
+                Bitmap.createScaledBitmap(bmp, targetPx, targetPx, true)
+                    .also { if (it !== bmp) bmp.recycle() }
+            } else bmp
+        }
 
         provideContent {
             val assetsReady = bgBitmap != null && wheelBitmap != null
