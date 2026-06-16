@@ -55,11 +55,11 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
     override val stateDefinition: GlanceStateDefinition<*> = PreferencesGlanceStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        // Load cached bitmaps (file I/O) before entering composable scope
-        val sync = WidgetSyncService(context)
-        val bgBitmap    = sync.getCachedBitmap(FILE_BG)
-        val frameBitmap = sync.getCachedBitmap(FILE_FRAME)
-        val spinBitmap  = sync.getCachedBitmap(FILE_SPIN)
+        // Load cached bitmaps via the repository (file I/O, no network calls here)
+        val repo        = SpinWheelRepository(context)
+        val bgBitmap    = repo.getCachedBitmap(FILE_BG)
+        val frameBitmap = repo.getCachedBitmap(FILE_FRAME)
+        val spinBitmap  = repo.getCachedBitmap(FILE_SPIN)
 
         // Pre-scale the wheel bitmap to the display size (260 dp).
         //
@@ -68,7 +68,7 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
         // time — e.g. a 600×600 source = 1.44 MB per frame = 72 MB of GC
         // pressure over the animation.  Scaling to ~260 dp first reduces the
         // per-frame bitmap to ~400×400 = 0.61 MB → 6× less memory churn.
-        val rawWheel = sync.getCachedBitmap(FILE_WHEEL)
+        val rawWheel = repo.getCachedBitmap(FILE_WHEEL)
         val density  = context.resources.displayMetrics.density
         val targetPx = (260f * density).toInt().coerceAtLeast(64)
         val wheelBitmap = rawWheel?.let { bmp ->

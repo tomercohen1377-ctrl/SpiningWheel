@@ -69,6 +69,11 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation("com.google.firebase:firebase-config")
 
+    // ── WorkManager ───────────────────────────────────────��───────────────── //
+    // Keeps sync work alive after BroadcastReceiver.onReceive() returns.
+    // Required for reliable widget loading without opening the app.
+    implementation(libs.androidx.work.runtime.ktx)
+
     // ── Core ──────────────────────────────────────────────────────────────── //
     implementation(libs.androidx.core.ktx)
 

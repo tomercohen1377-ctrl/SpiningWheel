@@ -11,19 +11,28 @@ private const val TAG = "RemoteConfigFetcher"
 /**
  * Firebase Remote Config key that holds the full wheel configuration JSON.
  *
- * Expected value format (set this in the Firebase Console):
+ * ## Required Firebase RC value format
+ *
+ * Set this JSON string as the value for key `wheel_config` in the Firebase Console.
+ * Asset values must be **Google Drive file IDs** (not filenames).
+ * The URL for each image is built as: `host + fileId`.
+ *
  * ```json
  * {
  *   "data": [{
  *     "id": "wheel_minimal",
- *     "network": { "assets": { "host": "https://drive.google.com/uc?export=download&id=" } },
- *     "wheel": {
- *       "rotation": { "duration": 3000, "minimumSpins": 3, "maximumSpins": 5 },
+ *     "network": {
  *       "assets": {
- *         "bg":         "<DRIVE_FILE_ID>",
- *         "wheel":      "<DRIVE_FILE_ID>",
- *         "wheelFrame": "<DRIVE_FILE_ID>",
- *         "wheelSpin":  "<DRIVE_FILE_ID>"
+ *         "host": "https://lh3.googleusercontent.com/d/"
+ *       }
+ *     },
+ *     "wheel": {
+ *       "rotation": { "duration": 3000, "minimumSpins": 5, "maximumSpins": 8 },
+ *       "assets": {
+ *         "bg":         "<DRIVE_FILE_ID_OF_BG>",
+ *         "wheel":      "<DRIVE_FILE_ID_OF_WHEEL>",
+ *         "wheelFrame": "<DRIVE_FILE_ID_OF_FRAME>",
+ *         "wheelSpin":  "<DRIVE_FILE_ID_OF_SPIN_BTN>"
  *       }
  *     }
  *   }],
@@ -31,60 +40,54 @@ private const val TAG = "RemoteConfigFetcher"
  * }
  * ```
  *
- * Full asset URL is built as: `host + fileId`
+ * Why `lh3.googleusercontent.com/d/ID`?
+ * Google's CDN serves JPEG/PNG regardless of the source format (handles AVIF, WebP, etc.)
+ * so BitmapFactory can decode it on every Android version without special handling.
  */
 const val RC_KEY_WHEEL_CONFIG = "wheel_config"
 
 /**
  * Fetches the `wheel_config` JSON string from Firebase Remote Config.
  *
- * ## Why this works without the app being opened
- *
- * Firebase initializes itself via [com.google.firebase.provider.FirebaseInitProvider],
- * a [android.content.ContentProvider] declared in the merged manifest.
- * ContentProviders are started when the app **process** starts — even when a
- * [android.content.BroadcastReceiver] (e.g. the widget's [SpinWheelWidgetReceiver])
- * triggers the process creation. So [Firebase.remoteConfig] is available here
- * without the user ever opening the host activity.
+ * Firebase initializes automatically via `FirebaseInitProvider` (a ContentProvider
+ * that runs at process start), so this works without the user opening the app —
+ * it is safe to call from a [WheelWidgetWorker] background worker.
  */
 object RemoteConfigFetcher {
-
-    /**
-     * Lazy-initialized Remote Config instance.
-     *
-     * Minimum fetch interval is 1 hour in production.
-     * Set to 0 during development: `minimumFetchIntervalInSeconds = 0L`.
-     */
-    private val rc by lazy {
-        Firebase.remoteConfig.also { r ->
-            r.setConfigSettingsAsync(
-                remoteConfigSettings {
-                    minimumFetchIntervalInSeconds = 3_600L   // 1 hour in production
-                }
-            )
-        }
-    }
 
     /**
      * Fetches and activates the latest Remote Config, then returns the raw JSON
      * string stored under [RC_KEY_WHEEL_CONFIG].
      *
-     * - On success → returns the JSON string (non-empty)
-     * - On failure (no network, Firebase not initialized, key missing) → returns `null`
+     * - On success  → returns the non-empty JSON string
+     * - On failure  → returns `null` (network error, key missing, etc.)
      *
-     * Must be called from a coroutine (suspend function).
+     * The minimum fetch interval is 1 hour (production).
+     * For development: temporarily lower it to 0 in the Firebase Console
+     * under Remote Config → Settings → Fetch timeout.
      */
     suspend fun fetchWheelConfigJson(): String? {
         return try {
+            val rc = Firebase.remoteConfig
+
+            // Apply settings and AWAIT completion before fetching.
+            // Not awaiting caused settings to be applied after fetchAndActivate
+            // was called, falling back to the default 12-hour throttle window.
+            rc.setConfigSettingsAsync(
+                remoteConfigSettings {
+                    minimumFetchIntervalInSeconds = 3_600L   // 1 hour
+                }
+            ).await()
+
             rc.fetchAndActivate().await()
+
             val json = rc.getString(RC_KEY_WHEEL_CONFIG)
             if (json.isBlank()) {
                 Log.w(TAG, "RC key '$RC_KEY_WHEEL_CONFIG' is empty — " +
-                        "make sure it is configured in the Firebase Console.")
+                        "set it in the Firebase Console (Remote Config).")
                 null
             } else {
-                Log.d(TAG, "Fetched '$RC_KEY_WHEEL_CONFIG' from Firebase RC ✓ " +
-                        "(${json.length} chars)")
+                Log.d(TAG, "Fetched '$RC_KEY_WHEEL_CONFIG' ✓ (${json.length} chars)")
                 json
             }
         } catch (e: Exception) {

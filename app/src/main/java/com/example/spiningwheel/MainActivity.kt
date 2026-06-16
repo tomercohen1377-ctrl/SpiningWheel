@@ -7,8 +7,7 @@ import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
-import com.example.spinwheel.DriveFileResolver
-import com.example.spinwheel.RemoteConfigFetcher
+import com.example.spinwheel.SpinWheelRepository
 import com.example.spinwheel.SpinWheelWidgetReceiver
 import com.example.spinwheel.WidgetSyncService
 import kotlinx.coroutines.CoroutineScope
@@ -23,19 +22,10 @@ import java.util.Locale
 /**
  * Host activity — management console for the Spin Wheel home-screen widget.
  *
- * The activity provides a "Sync Now" button that:
- *  1. Fetches the `wheel_config` JSON from Firebase Remote Config
- *  2. Parses the JSON → derives Drive download URLs (host + file IDs)
- *  3. Downloads and caches the 4 image assets via [WidgetSyncService]
- *  4. Refreshes the Glance widget on the home screen
- *
- * NOTE: The widget is **fully self-contained** — it performs the same pipeline
- * automatically (via [SpinWheelWidgetReceiver.onUpdate] / [SpinWheelWidgetReceiver.onEnabled])
- * every 12 hours and when first pinned, **without this activity needing to be open**.
- *
- * The Firebase Console Remote Config key is:
- *   key   → "wheel_config"
- *   value → the full wheel config JSON string (see [RemoteConfigFetcher] KDoc)
+ * Provides a "Sync Now" button that calls [SpinWheelRepository.syncAssets],
+ * then refreshes the Glance widget. The widget is **fully self-contained** and
+ * runs the same pipeline automatically via [SpinWheelWidgetReceiver] every
+ * 12 hours and on first pin — no app launch required.
  */
 class MainActivity : Activity() {
 
@@ -56,12 +46,10 @@ class MainActivity : Activity() {
         updateStatusText()
         syncButton.setOnClickListener { triggerSync(forceRefresh = true) }
 
-        // Auto-sync on every launch. forceRefresh=false skips files already cached.
+        // Auto-sync on launch — skips already-cached files
         triggerSync(forceRefresh = false)
     }
 
-    // ─────────────────────────────────────────────────────────────────────── //
-    //  Sync pipeline                                                          //
     // ─────────────────────────────────────────────────────────────────────── //
 
     private fun triggerSync(forceRefresh: Boolean = false) {
@@ -71,37 +59,16 @@ class MainActivity : Activity() {
 
         scope.launch {
             if (forceRefresh) {
-                // Clear all cached files + resolved URL mapping so everything
-                // is re-downloaded fresh (important after a decode bug fix)
                 withContext(Dispatchers.IO) {
                     WidgetSyncService(applicationContext).clearCache()
-                    DriveFileResolver.clearCache()
                 }
-            }
-
-            // Step 1 — Fetch wheel_config JSON from Firebase RC
-            val configJson = withContext(Dispatchers.IO) {
-                RemoteConfigFetcher.fetchWheelConfigJson()
-            }
-
-            if (configJson == null) {
-                progressBar.visibility = View.GONE
-                syncButton.isEnabled   = true
-                statusText.text        = "Firebase Remote Config unavailable.\n" +
-                        "Check that the 'wheel_config' key is set in the Firebase Console."
-                Toast.makeText(
-                    this@MainActivity,
-                    "Remote Config unavailable",
-                    Toast.LENGTH_LONG
-                ).show()
-                return@launch
             }
 
             statusText.text = "Downloading assets from Google Drive…"
 
-            // Step 2 — Parse JSON → derive URLs → download + cache assets
+            // Repository awaits both the Firebase RC fetch AND all downloads
             val success = withContext(Dispatchers.IO) {
-                WidgetSyncService(applicationContext).fetchAndCacheFromJson(configJson)
+                SpinWheelRepository(applicationContext).syncAssets()
             }
 
             progressBar.visibility = View.GONE
@@ -109,11 +76,11 @@ class MainActivity : Activity() {
 
             if (success) {
                 updateStatusText()
-                // Step 3 — Refresh the Glance widget with the new bitmaps
                 SpinWheelWidgetReceiver.requestUpdate(applicationContext)
                 Toast.makeText(this@MainActivity, "Widget synced ✓", Toast.LENGTH_SHORT).show()
             } else {
-                statusText.text = "Sync failed — check your internet connection."
+                statusText.text = "Sync failed — check your internet connection\n" +
+                        "or verify the Firebase RC 'wheel_config' key is set."
                 Toast.makeText(this@MainActivity, "Sync failed", Toast.LENGTH_LONG).show()
             }
         }

@@ -6,6 +6,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 import com.example.spinwheel.data.WheelConfigResponse
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -16,28 +18,24 @@ import java.util.concurrent.TimeUnit
 private const val TAG = "WidgetSyncService"
 
 /** SharedPreferences file shared between the widget, host app, and RN module. */
-const val PREFS_NAME = "SpinWheelPrefs"
+const val PREFS_NAME          = "SpinWheelPrefs"
 const val KEY_LAST_FETCH_TIME = "last_config_fetch_time"
 const val KEY_CONFIG_URL      = "config_url"
 
-// Saved asset URL keys (so the widget can re-sync after a reboot)
+// Persisted asset URL keys
 const val KEY_URL_BG    = "asset_url_bg"
 const val KEY_URL_WHEEL = "asset_url_wheel"
 const val KEY_URL_FRAME = "asset_url_frame"
 const val KEY_URL_SPIN  = "asset_url_spin"
 
-// Cache file names (always stored as PNG after re-encoding)
+// Cached file names (inside Context.filesDir)
 const val FILE_BG    = "sw_bg.png"
 const val FILE_WHEEL = "sw_wheel.png"
 const val FILE_FRAME = "sw_frame.png"
 const val FILE_SPIN  = "sw_spin.png"
 
 /**
- * Explicit asset URLs passed to [fetchAndCache].
- *
- * The JSON config on Drive contains a **placeholder host** —
- * `"https://drive.google.com/your-public-folder-or-direct-links/"` — so the
- * asset URLs are derived here in the app using the known Drive file IDs.
+ * Explicit asset URLs used by the React Native [SpinWheelModule].
  */
 data class SpinWheelAssets(
     val bgUrl:    String,
@@ -47,14 +45,23 @@ data class SpinWheelAssets(
 )
 
 /**
- * Blocking service that:
- * 1. Downloads the remote JSON config for spin settings (duration, easing).
- * 2. Downloads all four image assets from the **explicit** [SpinWheelAssets] URLs.
- * 3. Re-encodes each image as PNG before saving — handles any source format
- *    (PNG, JPEG, AVIF, WebP) regardless of the file extension on Drive.
- * 4. Persists [KEY_LAST_FETCH_TIME] and asset URLs in [SharedPreferences].
+ * Handles downloading and disk-caching the four spin wheel image assets.
  *
- * Always call on a background thread.
+ * All network and file I/O methods are `suspend` functions that dispatch
+ * to [Dispatchers.IO], so they are safe to call directly from a
+ * [kotlinx.coroutines.CoroutineScope] or [androidx.work.CoroutineWorker]
+ * without manually switching dispatchers at the call site.
+ *
+ * URL construction: `host.trimEnd('/') + '/' + fileId`
+ *
+ * The Firebase RC JSON should provide Drive **file IDs** (not filenames) as
+ * asset values, paired with the lh3 host:
+ * ```json
+ * "network": { "assets": { "host": "https://lh3.googleusercontent.com/d/" } },
+ * "wheel":   { "assets": { "bg": "FILE_ID", "wheel": "FILE_ID", ... } }
+ * ```
+ * `lh3.googleusercontent.com/d/FILE_ID` serves JPEG/PNG regardless of the
+ * original format, so BitmapFactory can decode it on all Android versions.
  */
 class WidgetSyncService(private val context: Context) {
 
@@ -75,170 +82,106 @@ class WidgetSyncService(private val context: Context) {
     // ─────────────────────────────────────────────────────────────────────── //
 
     /**
-     * Fetches the JSON config (for spin duration/settings) then downloads and
-     * caches all four image assets.
+     * Parses [configJson] (from Firebase RC), builds asset URLs as
+     * `host + fileId`, then downloads and caches all four images.
      *
-     * Asset URLs are provided **explicitly** — the JSON's `network.assets.host`
-     * field is a placeholder and must not be used for URL construction.
+     * **This is a suspend function.** All blocking OkHttp and file I/O runs
+     * on [Dispatchers.IO]. The caller awaits completion — the widget must
+     * only be updated AFTER this function returns `true`.
      *
-     * @return `true` on full success; `false` if any step fails.
+     * Files already cached (size > 1 KB) are skipped unless the URL changed.
+     *
+     * @return `true` on full success; `false` if parsing or any download fails.
      */
-    fun fetchAndCache(configUrl: String, assets: SpinWheelAssets): Boolean {
-        return try {
-            Log.d(TAG, "Fetching config from $configUrl")
-            // Fetch JSON — used only for spin settings (duration, easing etc.)
-            // The host field in the JSON is a placeholder; we ignore it.
-            val rawJson = fetchString(configUrl)
-            // Parse just to validate the response — we log the duration
-            runCatching {
-                val response = json.decodeFromString(WheelConfigResponse.serializer(), rawJson)
-                val duration = response.data.firstOrNull()?.wheel?.rotation?.duration ?: 2000L
-                Log.d(TAG, "Config OK — spin duration: ${duration}ms")
-            }.onFailure { Log.w(TAG, "Config parse warning (non-fatal): ${it.message}") }
+    suspend fun fetchAndCacheFromJson(configJson: String): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = json.decodeFromString(WheelConfigResponse.serializer(), configJson)
+                val item     = response.data.firstOrNull()
+                    ?: throw IOException("Config data[] is empty")
 
-            Log.d(TAG, "Downloading 4 assets from Drive…")
-            downloadAsPng(assets.bgUrl,    FILE_BG,    "background")
-            downloadAsPng(assets.wheelUrl, FILE_WHEEL, "wheel")
-            downloadAsPng(assets.frameUrl, FILE_FRAME, "frame")
-            downloadAsPng(assets.spinUrl,  FILE_SPIN,  "spin button")
+                val host   = item.network.assets.host.trim()
+                val assets = item.wheel.assets
 
-            // Persist metadata + asset URLs (widget reads them after reboot)
-            prefs.edit()
-                .putLong(KEY_LAST_FETCH_TIME, System.currentTimeMillis())
-                .putString(KEY_CONFIG_URL, configUrl)
-                .putString(KEY_URL_BG,    assets.bgUrl)
-                .putString(KEY_URL_WHEEL, assets.wheelUrl)
-                .putString(KEY_URL_FRAME, assets.frameUrl)
-                .putString(KEY_URL_SPIN,  assets.spinUrl)
-                .apply()
+                Log.d(TAG, "fetchAndCacheFromJson — host=$host  " +
+                        "spinDuration=${item.wheel.rotation.duration}ms")
 
-            Log.d(TAG, "Sync complete ✓")
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Sync failed: ${e.message}", e)
-            false
+                if (host.isBlank() || !host.startsWith("http")) {
+                    throw IOException(
+                        "Invalid host in wheel_config: \"$host\". " +
+                        "Must start with http."
+                    )
+                }
+
+                val base = if (host.endsWith('/')) host else "$host/"
+
+                val newBgUrl    = base + assets.bg
+                val newWheelUrl = base + assets.wheel
+                val newFrameUrl = base + assets.wheelFrame
+                val newSpinUrl  = base + assets.wheelSpin
+
+                Log.d(TAG, "Asset URLs:\n" +
+                        "  bg    = $newBgUrl\n" +
+                        "  wheel = $newWheelUrl\n" +
+                        "  frame = $newFrameUrl\n" +
+                        "  spin  = $newSpinUrl")
+
+                // Invalidate disk cache if any URL changed
+                invalidateIfChanged(newBgUrl,    KEY_URL_BG,    FILE_BG)
+                invalidateIfChanged(newWheelUrl, KEY_URL_WHEEL, FILE_WHEEL)
+                invalidateIfChanged(newFrameUrl, KEY_URL_FRAME, FILE_FRAME)
+                invalidateIfChanged(newSpinUrl,  KEY_URL_SPIN,  FILE_SPIN)
+
+                // Download all four assets — each call awaits its own download
+                downloadFile(newBgUrl,    FILE_BG,    "background")
+                downloadFile(newWheelUrl, FILE_WHEEL, "wheel")
+                downloadFile(newFrameUrl, FILE_FRAME, "frame")
+                downloadFile(newSpinUrl,  FILE_SPIN,  "spin button")
+
+                // Persist URLs + timestamp AFTER all downloads succeed
+                prefs.edit()
+                    .putLong(KEY_LAST_FETCH_TIME, System.currentTimeMillis())
+                    .putString(KEY_URL_BG,    newBgUrl)
+                    .putString(KEY_URL_WHEEL, newWheelUrl)
+                    .putString(KEY_URL_FRAME, newFrameUrl)
+                    .putString(KEY_URL_SPIN,  newSpinUrl)
+                    .apply()
+
+                Log.d(TAG, "fetchAndCacheFromJson complete ✓ — all 4 assets cached")
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "fetchAndCacheFromJson failed: ${e.message}", e)
+                false
+            }
         }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────── //
 
     /**
-     * Parses the full wheel config JSON (as fetched from Firebase Remote Config),
-     * resolves each asset filename to a direct download URL, then downloads and
-     * caches all four images.
-     *
-     * ## URL resolution strategies
-     *
-     * **Google Drive folder host** (`host` contains `/folders/`):
-     * ```
-     * host = "https://drive.google.com/drive/u/0/folders/FOLDER_ID"
-     * asset = "bg.jpeg"
-     * ```
-     * [DriveFileResolver] fetches the folder HTML, extracts all file IDs,
-     * sends HEAD requests to map `filename → fileId`, then builds:
-     * `https://drive.google.com/uc?export=download&id=FILE_ID`
-     *
-     * Filename matching uses 3 fallbacks: exact → case-insensitive → stem
-     * (`bg.jpeg` matches `bg.png` via the stem `bg`).
-     *
-     * **Direct prefix host** (`host = "https://cdn.example.com/assets/"`):
-     * ```
-     * resolvedUrl = host + filename    (unchanged)
-     * ```
-     *
-     * ## Cache invalidation
-     *
-     * Resolved download URLs are saved in [SharedPreferences].  If the resolved
-     * URL for an asset changes (new file ID from Drive, or a new host in RC),
-     * the cached PNG is deleted and re-downloaded on the next sync.
-     *
-     * @param configJson Raw JSON string from Firebase RC `wheel_config` key.
-     * @return `true` on full success; `false` if parsing, resolution, or download fails.
+     * Downloads the given explicit [SpinWheelAssets] URLs and caches them.
+     * Called by the React Native [SpinWheelModule].
      */
-    fun fetchAndCacheFromJson(configJson: String): Boolean {
-        return try {
-            val response = json.decodeFromString(WheelConfigResponse.serializer(), configJson)
-            val item = response.data.firstOrNull()
-                ?: throw IOException("Config data[] is empty")
+    suspend fun fetchAndCache(configUrl: String, assets: SpinWheelAssets): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                downloadFile(assets.bgUrl,    FILE_BG,    "background")
+                downloadFile(assets.wheelUrl, FILE_WHEEL, "wheel")
+                downloadFile(assets.frameUrl, FILE_FRAME, "frame")
+                downloadFile(assets.spinUrl,  FILE_SPIN,  "spin button")
 
-            val host   = item.network.assets.host.trim()
-            val assets = item.wheel.assets
+                prefs.edit()
+                    .putLong(KEY_LAST_FETCH_TIME, System.currentTimeMillis())
+                    .putString(KEY_CONFIG_URL, configUrl)
+                    .putString(KEY_URL_BG,    assets.bgUrl)
+                    .putString(KEY_URL_WHEEL, assets.wheelUrl)
+                    .putString(KEY_URL_FRAME, assets.frameUrl)
+                    .putString(KEY_URL_SPIN,  assets.spinUrl)
+                    .apply()
 
-            Log.d(TAG, "fetchAndCacheFromJson — host=$host " +
-                    "spinDuration=${item.wheel.rotation.duration}ms")
-
-            if (host.isBlank() || !host.startsWith("http")) {
-                throw IOException(
-                    "Invalid host in wheel_config: \"$host\". " +
-                    "Must be a valid URL starting with http."
-                )
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "fetchAndCache failed: ${e.message}", e)
+                false
             }
-
-            // ── Invalidate DriveFileResolver cache if the folder URL changed ── //
-            val savedHost = prefs.getString("resolved_host", null)
-            if (savedHost != host) {
-                DriveFileResolver.clearCache()
-                Log.d(TAG, "Folder URL changed — DriveFileResolver cache cleared")
-            }
-
-            // ── Resolve filenames → download URLs ─────────────────────────── //
-            //
-            // If host is a Drive folder URL  → DriveFileResolver does:
-            //   1. Fetch folder HTML, extract file IDs
-            //   2. HEAD each ID to get Content-Disposition filename
-            //   3. Match requested filename (exact / case-insensitive / stem)
-            //   4. Return "https://drive.google.com/uc?export=download&id=FILE_ID"
-            //
-            // Otherwise → host + filename (CDN / custom server)
-            //
-            val newBgUrl    = DriveFileResolver.resolve(client, host, assets.bg)
-            val newWheelUrl = DriveFileResolver.resolve(client, host, assets.wheel)
-            val newFrameUrl = DriveFileResolver.resolve(client, host, assets.wheelFrame)
-            val newSpinUrl  = DriveFileResolver.resolve(client, host, assets.wheelSpin)
-
-            Log.d(TAG, "Resolved URLs:\n" +
-                    "  bg    = $newBgUrl\n" +
-                    "  wheel = $newWheelUrl\n" +
-                    "  frame = $newFrameUrl\n" +
-                    "  spin  = $newSpinUrl")
-
-            // ── Invalidate per-asset cache if URL changed ─────────────────── //
-            fun invalidateIfChanged(newUrl: String, prefKey: String, cacheFile: String) {
-                val oldUrl = prefs.getString(prefKey, null)
-                if (oldUrl != null && oldUrl != newUrl) {
-                    File(context.filesDir, cacheFile).delete()
-                    Log.d(TAG, "Cache invalidated ($cacheFile): URL changed")
-                }
-            }
-            invalidateIfChanged(newBgUrl,    KEY_URL_BG,    FILE_BG)
-            invalidateIfChanged(newWheelUrl, KEY_URL_WHEEL, FILE_WHEEL)
-            invalidateIfChanged(newFrameUrl, KEY_URL_FRAME, FILE_FRAME)
-            invalidateIfChanged(newSpinUrl,  KEY_URL_SPIN,  FILE_SPIN)
-
-            // ── Download + re-encode as PNG ───────────────────────────────── //
-            // downloadAsPng skips files that are already cached (size > 1 KB)
-            downloadAsPng(newBgUrl,    FILE_BG,    "background")
-            downloadAsPng(newWheelUrl, FILE_WHEEL, "wheel")
-            downloadAsPng(newFrameUrl, FILE_FRAME, "frame")
-            downloadAsPng(newSpinUrl,  FILE_SPIN,  "spin button")
-
-            // ── Persist URLs + fetch metadata ─────────────────────────────── //
-            prefs.edit()
-                .putLong(KEY_LAST_FETCH_TIME, System.currentTimeMillis())
-                .putString("resolved_host",   host)
-                .putString(KEY_URL_BG,        newBgUrl)
-                .putString(KEY_URL_WHEEL,     newWheelUrl)
-                .putString(KEY_URL_FRAME,     newFrameUrl)
-                .putString(KEY_URL_SPIN,      newSpinUrl)
-                .apply()
-
-            Log.d(TAG, "fetchAndCacheFromJson complete ✓")
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "fetchAndCacheFromJson failed: ${e.message}", e)
-            false
         }
-    }
 
     fun getLastFetchTime(): Long = prefs.getLong(KEY_LAST_FETCH_TIME, 0L)
 
@@ -246,8 +189,7 @@ class WidgetSyncService(private val context: Context) {
         listOf(FILE_BG, FILE_WHEEL, FILE_FRAME, FILE_SPIN)
             .forEach { File(context.filesDir, it).delete() }
         prefs.edit()
-            .remove(KEY_LAST_FETCH_TIME)
-            .remove(KEY_CONFIG_URL)
+            .remove(KEY_LAST_FETCH_TIME).remove(KEY_CONFIG_URL)
             .remove(KEY_URL_BG).remove(KEY_URL_WHEEL)
             .remove(KEY_URL_FRAME).remove(KEY_URL_SPIN)
             .apply()
@@ -255,10 +197,8 @@ class WidgetSyncService(private val context: Context) {
     }
 
     /**
-     * Returns a [Bitmap] from the cached file, or `null` if not cached.
-     *
-     * Files are stored as JPEG or PNG (served by lh3.googleusercontent.com),
-     * so plain [BitmapFactory] is sufficient on all Android versions.
+     * Returns a [Bitmap] decoded from the cached file, or `null` if not cached.
+     * This is a fast file-read — safe to call on any dispatcher.
      */
     fun getCachedBitmap(fileName: String): Bitmap? {
         val file = File(context.filesDir, fileName)
@@ -273,60 +213,54 @@ class WidgetSyncService(private val context: Context) {
 
     // ─────────────────────────────────────────────────────────────────────── //
     //  Private helpers                                                        //
-    // ──────────────────────────��──────────────────────────────────────────── //
+    // ─────────────────────────────────────────────────────────────────────── //
+
+    private fun invalidateIfChanged(newUrl: String, prefKey: String, cacheFile: String) {
+        val oldUrl = prefs.getString(prefKey, null)
+        if (oldUrl != null && oldUrl != newUrl) {
+            File(context.filesDir, cacheFile).delete()
+            Log.d(TAG, "Cache invalidated for $cacheFile (URL changed)")
+        }
+    }
 
     /**
-     * Downloads [url] and saves the raw bytes directly to [fileName].
+     * Downloads [url] and saves raw bytes to [fileName] inside [Context.filesDir].
+     * Skips if file is already cached (size > 1 KB).
+     * Writes atomically via a temp file to avoid partial writes on failure.
      *
-     * ## Why raw bytes (no decode/re-encode)?
-     *
-     * The download URL is always an `lh3.googleusercontent.com/d/FILE_ID` URL
-     * (set by [DriveFileResolver]).  Google's lh3 CDN serves the image as
-     * **JPEG or PNG** regardless of the original file format on Drive — even
-     * if the Drive file is AVIF, lh3 transcodes it to JPEG automatically.
-     *
-     * JPEG and PNG are universally decodable by [BitmapFactory] on every
-     * Android version (no [android.graphics.ImageDecoder] needed, no color-space
-     * issues, no "getPixels failed with error invalid input").
-     *
-     * Saving the raw bytes avoids an unnecessary decode→encode round-trip and
-     * eliminates any quality loss or color-space conversion errors.
+     * Must be called from [Dispatchers.IO] (blocking OkHttp call).
      */
-    private fun downloadAsPng(url: String, fileName: String, label: String) {
-        val file = File(context.filesDir, fileName)
-        if (file.exists() && file.length() > 1024) {
-            Log.d(TAG, "Cache hit: $label ($fileName)")
+    private fun downloadFile(url: String, fileName: String, label: String) {
+        val dest = File(context.filesDir, fileName)
+        if (dest.exists() && dest.length() > 1_024L) {
+            Log.d(TAG, "Cache hit — skipping $label ($fileName)")
             return
         }
 
         Log.d(TAG, "Downloading $label from $url")
-        val bytes = fetchBytes(url)
-        Log.d(TAG, "Downloaded $label: ${bytes.size} bytes  " +
-                "(magic: ${bytes.take(4).joinToString(" ") { "%02X".format(it) }})")
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0 (Android; SpinWheel)")
+            .build()
 
-        if (bytes.size < 256) {
-            throw IOException("$label response is too small (${bytes.size} bytes) — " +
-                    "likely an error page. URL: $url")
-        }
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code} downloading $label")
+            }
+            val bytes = response.body?.bytes()
+                ?: throw IOException("Empty body downloading $label")
 
-        // Save raw bytes — lh3 already serves JPEG/PNG, no decode needed
-        file.writeBytes(bytes)
-        Log.d(TAG, "Saved $label: $fileName (${file.length()} bytes)")
-    }
+            if (bytes.size < 100) {
+                throw IOException(
+                    "$label response too small (${bytes.size} B) — " +
+                    "verify the Drive file is publicly shared."
+                )
+            }
 
-    private fun fetchString(url: String): String {
-        val req = Request.Builder().url(url).build()
-        client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code} fetching $url")
-            return resp.body?.string() ?: throw IOException("Empty body: $url")
-        }
-    }
-
-    private fun fetchBytes(url: String): ByteArray {
-        val req = Request.Builder().url(url).build()
-        client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code} fetching $url")
-            return resp.body?.bytes() ?: throw IOException("Empty body: $url")
+            val tmp = File(context.filesDir, "$fileName.tmp")
+            tmp.writeBytes(bytes)
+            tmp.renameTo(dest)
+            Log.d(TAG, "Saved $label → $fileName (${bytes.size} bytes)")
         }
     }
 }

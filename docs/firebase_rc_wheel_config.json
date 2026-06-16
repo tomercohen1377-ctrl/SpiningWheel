@@ -2,7 +2,7 @@
   "data": [
     {
       "id": "wheel_minimal",
-      "name": "Minimal Wheel Widget Configuration",
+      "name": "Spin Wheel Widget",
       "type": "Widget",
       "network": {
         "attributes": {
@@ -13,21 +13,21 @@
           "debugMode": false
         },
         "assets": {
-          "host": "https://drive.google.com/drive/u/0/folders/1-gErkhkimnhdyuknL0zRSO7PyJ9ibNL2"
+          "host": "https://lh3.googleusercontent.com/d/"
         }
       },
       "wheel": {
         "rotation": {
-          "duration": 2000,
-          "minimumSpins": 3,
-          "maximumSpins": 5,
+          "duration": 3000,
+          "minimumSpins": 5,
+          "maximumSpins": 8,
           "spinEasing": "easeInOutCubic"
         },
         "assets": {
-          "bg": "bg.jpeg",
-          "wheelFrame": "wheel-frame.png",
-          "wheelSpin": "wheel-spin.png",
-          "wheel": "wheel.png"
+          "bg":         "1UVcO433GbPnFbQRlF9twaqly0UJBm2jf",
+          "wheel":      "1F5zylVFQ5x4m6b-UGQ_gqwrNikNqycZk",
+          "wheelFrame": "1LMPhtKq9RknDpGveg2altwHdCPIvU0iF",
+          "wheelSpin":  "1SLQOU2kk5jv8WMN6QinqBjuTeAxAGmr6"
         }
       }
     }
