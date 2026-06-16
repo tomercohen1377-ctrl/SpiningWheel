@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application>
+        <!--
+          GlanceAppWidgetReceiver — the home-screen launcher discovers the
+          Spin Wheel widget via this receiver and the appwidget-provider metadata.
+
+          GlanceAppWidgetReceiver is a subclass of AppWidgetProvider, so standard
+          AppWidget registration applies. Glance handles all lifecycle internally.
+        -->
+        <receiver
+            android:name=".SpinWheelWidgetReceiver"
+            android:label="Spin Wheel"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/spin_wheel_widget_info" />
+        </receiver>
+    </application>
+
+</manifest>

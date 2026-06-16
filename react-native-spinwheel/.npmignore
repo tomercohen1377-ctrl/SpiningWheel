@@ -1,0 +1,15 @@
+# Source TypeScript (lib/ ships the compiled output)
+src/
+
+# Dev configs
+tsconfig.json
+.eslintrc*
+.prettierrc*
+
+# Build artefacts
+android/.gradle/
+android/build/
+*.tgz
+
+# CI/CD
+.github/
