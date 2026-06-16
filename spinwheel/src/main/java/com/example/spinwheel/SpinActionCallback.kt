@@ -1,31 +1,30 @@
 package com.example.spinwheel
 
 import android.content.Context
-import androidx.datastore.preferences.core.Preferences
+import android.content.Intent
 import androidx.glance.GlanceId
 import androidx.glance.action.ActionParameters
 import androidx.glance.appwidget.action.ActionCallback
-import androidx.glance.appwidget.state.getAppWidgetState
-import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.glance.state.PreferencesGlanceStateDefinition
-import kotlinx.coroutines.delay
 
 /**
- * Glance [ActionCallback] invoked when the user taps the spin button.
+ * Glance [ActionCallback] invoked when the user taps the spin button on the widget.
  *
- * ## Spin animation in a home-screen widget
- * Standard Compose animation APIs (`Animatable`, `animateFloatAsState`) cannot
- * be used in Glance because Glance runs in the Android system process — outside
- * the app's Compose runtime. Instead we simulate animation as a "flip-book":
+ * ## Animation strategy
  *
- * 1. Pick a random rotation delta (3–5 full turns + random partial).
- * 2. Apply a **quadratic ease-out** curve across [ANIMATION_FRAMES] steps.
- * 3. Each step: write the new angle to DataStore, call `widget.update()`.
- * 4. Glance recomposes, rotates the wheel bitmap via `Matrix`, and pushes
- *    fresh `RemoteViews` to every pinned widget instance.
+ * Glance widgets run in the system process via `RemoteViews` — standard Compose
+ * animation APIs (`Animatable`, `animateFloatAsState`, `graphicsLayer`) are
+ * unavailable.  The old flip-book approach (20 frames × 80 ms via DataStore
+ * writes + `widget.update()`) produced ~12 fps and heavy bitmap allocation.
  *
- * The result is a visually decelerating spin that takes ≈ [ANIMATION_FRAMES] ×
- * [FRAME_DELAY_MS] ms ≈ 1.6 seconds to complete.
+ * **New approach**: launch [SpinActivity] (in the host `:app` module) via an
+ * implicit Intent.  `SpinActivity` is a full-screen Compose activity that:
+ * - Plays a buttery 60 fps spin using `Animatable` + `graphicsLayer { rotationZ }`
+ * - Shows a golden glow ring that pulses during the spin
+ * - Writes the final wheel angle back to every widget instance via DataStore
+ * - Closes itself automatically after a brief pause
+ *
+ * The library communicates with the app-level activity through the intent action
+ * string [ACTION_SPIN] so there is no compile-time dependency between modules.
  */
 class SpinActionCallback : ActionCallback {
 
@@ -34,42 +33,13 @@ class SpinActionCallback : ActionCallback {
         glanceId: GlanceId,
         parameters: ActionParameters
     ) {
-        // ── 1. Read current wheel angle from DataStore ────────────────────── //
-        val currentPrefs = getAppWidgetState<Preferences>(
-            context, PreferencesGlanceStateDefinition, glanceId
-        )
-        val baseAngle = currentPrefs[SpinWheelGlanceWidget.ROTATION_KEY] ?: 0f
-
-        // ── 2. Calculate target rotation delta ───────────────────────────── //
-        // 3–5 full rotations (1 080–1 800°) + a random partial stop angle
-        val fullRotations = (3..5).random()
-        val partialDeg    = (0..359).random().toFloat()
-        val totalDelta    = fullRotations * 360f + partialDeg
-
-        // ── 3. Animate using ease-out flip-book ──────────────────────────── //
-        for (frame in 1..ANIMATION_FRAMES) {
-            val t       = frame.toFloat() / ANIMATION_FRAMES
-            val eased   = 1f - (1f - t) * (1f - t)        // quadratic ease-out
-            val current = (baseAngle + totalDelta * eased) % 360f
-
-            // Write angle to DataStore Preferences
-            updateAppWidgetState(context, glanceId) { prefs ->
-                prefs[SpinWheelGlanceWidget.ROTATION_KEY] = current
-            }
-
-            // Re-compose the widget with the updated angle
-            SpinWheelGlanceWidget().update(context, glanceId)
-
-            // Pause between frames
-            delay(FRAME_DELAY_MS)
-        }
+        val intent = Intent(ACTION_SPIN)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        context.startActivity(intent)
     }
 
     companion object {
-        /** Number of animation frames for the spin. */
-        private const val ANIMATION_FRAMES = 20
-
-        /** Delay between frames in ms — total animation ≈ 20 × 80 = 1 600 ms. */
-        private const val FRAME_DELAY_MS   = 80L
+        /** Intent action that [SpinActivity] registers an intent-filter for. */
+        const val ACTION_SPIN = "com.example.spinwheel.ACTION_SPIN"
     }
 }

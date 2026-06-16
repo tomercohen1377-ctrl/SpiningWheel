@@ -26,9 +26,30 @@
         </activity>
 
         <!--
+          SpinActivity — full-screen Compose animation activity.
+          Launched by SpinActionCallback via the ACTION_SPIN intent action
+          when the user taps the spin button on the home-screen widget.
+
+          android:launchMode="singleTop" prevents stacking multiple instances
+          if the user taps the widget rapidly.
+          android:excludeFromRecents hides it from the task switcher.
+        -->
+        <activity
+            android:name=".SpinActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.SpinWheel.FullScreen"
+            tools:ignore="AppLinkUrlError">
+            <intent-filter>
+                <action android:name="com.example.spinwheel.ACTION_SPIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!--
           GlanceAppWidgetReceiver — must be declared in the app manifest so the
           Android launcher discovers the widget at install time.
-          (The library manifest alone is not sufficient for widget discovery.)
         -->
         <receiver
             android:name="com.example.spinwheel.SpinWheelWidgetReceiver"
