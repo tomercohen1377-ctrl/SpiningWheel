@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "556789949398",
+    "project_id": "spiningwheel-291fb",
+    "storage_bucket": "spiningwheel-291fb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:556789949398:android:ec8b888105d848f8e27a77",
+        "android_client_info": {
+          "package_name": "com.example.spinwheel"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDiG9-u6inBKZgJaBXBgQPux0FsgPS96uQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

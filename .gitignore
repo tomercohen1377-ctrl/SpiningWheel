@@ -14,8 +14,9 @@ captures/
 *.dex
 *.class
 
-# Google Services key — NEVER commit this
-google-services.json
+# Google Services key — committed so the project builds out of the box
+# (firebase config is non-sensitive for this project)
+# google-services.json
 
 # Generated sources
 app/src/main/java/com/example/spiningwheel/BuildConfig.java
