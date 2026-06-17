@@ -12,7 +12,7 @@
           AppWidget registration applies. Glance handles all lifecycle internally.
         -->
         <receiver
-            android:name=".SpinWheelWidgetReceiver"
+            android:name=".ui.SpinWheelWidgetReceiver"
             android:label="Spin Wheel"
             android:exported="true">
             <intent-filter>

@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+      Compose-friendly theme. We don't pull in com.google.android.material:material
+      so the parent is the stock Android "Material Light" + NoActionBar variant,
+      which works fine with `MaterialTheme {}` in Compose.
+    -->
     <style name="Theme.SpiningWheel" parent="android:Theme.Material.Light.NoActionBar" />
 </resources>

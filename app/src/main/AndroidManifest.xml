@@ -30,7 +30,7 @@
           Android launcher discovers the widget at install time.
         -->
         <receiver
-            android:name="com.example.spinwheel.SpinWheelWidgetReceiver"
+            android:name="com.example.spinwheel.ui.SpinWheelWidgetReceiver"
             android:label="Spin Wheel"
             android:exported="true">
             <intent-filter>

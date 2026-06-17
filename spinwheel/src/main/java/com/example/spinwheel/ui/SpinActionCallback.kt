@@ -1,4 +1,4 @@
-package com.example.spinwheel
+package com.example.spinwheel.ui
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences

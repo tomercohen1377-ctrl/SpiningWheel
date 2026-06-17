@@ -1,4 +1,4 @@
-package com.example.spinwheel
+package com.example.spinwheel.ui
 
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver

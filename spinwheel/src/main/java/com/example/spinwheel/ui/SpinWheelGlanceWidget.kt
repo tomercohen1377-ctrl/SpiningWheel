@@ -1,4 +1,4 @@
-package com.example.spinwheel
+package com.example.spinwheel.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.util.Log
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -90,7 +91,7 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
 
     /** Shown while images are being fetched from Firebase + Drive. */
     @SuppressLint("RestrictedApi")
-    @androidx.compose.runtime.Composable
+    @Composable
     private fun LoadingContent() {
         Box(
             modifier         = GlanceModifier.fillMaxSize()
@@ -125,7 +126,7 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
      * The [glanceId] is passed directly so there is no DataStore race.
      */
     @SuppressLint("RestrictedApi")
-    @androidx.compose.runtime.Composable
+    @Composable
     private fun InitialContent() {
         Box(
             modifier         = GlanceModifier.fillMaxSize()
@@ -161,7 +162,7 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
      * Tapping "Retry" clears the error state and runs the pipeline again.
      */
     @SuppressLint("RestrictedApi")
-    @androidx.compose.runtime.Composable
+    @Composable
     private fun ErrorContent(message: String) {
         Box(
             modifier         = GlanceModifier.fillMaxSize()
@@ -199,7 +200,7 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
         }
     }
 
-    @androidx.compose.runtime.Composable
+    @Composable
     private fun WheelContent(
         bg: Bitmap,
         wheel: Bitmap,
