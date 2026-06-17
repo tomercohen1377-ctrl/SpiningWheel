@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
@@ -69,12 +70,14 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
 
 
         provideContent {
+            // Read Glance DataStore state — available synchronously inside provideContent
+            val prefs     = currentState<Preferences>()
+            val isLoading = prefs[IS_LOADING_KEY] ?: false
 
             val graph = SpinWheelGraph.get(context)
 
-            // Read directly from disk. Any failure here ends up as null bitmaps,
-            // which fall back to LoadingContent — not a thrown exception.
-            val bgBitmap   = decodeSafe(graph.repository.getImageBytes(AssetKey.BG))
+            // Read directly from disk. Any failure ends up as null bitmaps → no throw.
+            val bgBitmap    = decodeSafe(graph.repository.getImageBytes(AssetKey.BG))
             val wheelBitmap = decodeSafe(
                 graph.repository.getImageBytes(AssetKey.WHEEL),
                 context,
@@ -83,16 +86,18 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
             val frameBitmap = decodeSafe(graph.repository.getImageBytes(AssetKey.FRAME))
             val spinBitmap  = decodeSafe(graph.repository.getImageBytes(AssetKey.SPIN))
 
-
-            if (bgBitmap == null || wheelBitmap == null) {
-                LoadingContent()
-            } else {
-                WheelContent(
+            when {
+                // Images already on disk — show the wheel
+                bgBitmap != null && wheelBitmap != null -> WheelContent(
                     bg    = bgBitmap,
                     wheel = wheelBitmap,
                     frame = frameBitmap,
                     spin  = spinBitmap,
                 )
+                // Download in progress — show a spinner text
+                isLoading -> LoadingContent()
+                // Nothing yet — show the "Load Wheel" button
+                else -> InitialContent()
             }
         }
     }
@@ -101,6 +106,7 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
     //  UI                                                                  //
     // ──────────────────────────────────────────────────────────────────── //
 
+    /** Shown while images are being fetched from Firebase + Drive. */
     @SuppressLint("RestrictedApi")
     @androidx.compose.runtime.Composable
     private fun LoadingContent() {
@@ -120,11 +126,49 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
                     ),
                 )
                 Text(
-                    text  = "Loading from Firebase…",
+                    text  = "Downloading assets…",
                     style = TextStyle(
                         color    = ColorProvider(Color(0xFF8888AA)),
                         fontSize = 11.sp,
                     ),
+                )
+            }
+        }
+    }
+
+    /**
+     * Shown on first add — before any images are fetched.
+     * Tapping the button triggers [LoadWheelActionCallback] which runs
+     * the full download pipeline inside Glance's managed goAsync scope.
+     * The [glanceId] is passed directly so there is no DataStore race.
+     */
+    @SuppressLint("RestrictedApi")
+    @androidx.compose.runtime.Composable
+    private fun InitialContent() {
+        Box(
+            modifier         = GlanceModifier.fillMaxSize()
+                .background(ColorProvider(Color(0xFF1A1A2E))),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(text = "🎡", style = TextStyle(fontSize = 40.sp))
+                Text(
+                    text  = "Spin Wheel",
+                    style = TextStyle(
+                        color      = ColorProvider(Color.White),
+                        fontSize   = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+                Text(
+                    text  = "Tap to load",
+                    style = TextStyle(
+                        color      = ColorProvider(Color(0xFFFFD700)),
+                        fontSize   = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    modifier = GlanceModifier
+                        .clickable(onClick = actionRunCallback<LoadWheelActionCallback>()),
                 )
             }
         }
@@ -224,6 +268,8 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
     }
 
     companion object {
-        val ROTATION_KEY = floatPreferencesKey("wheel_rotation_angle")
+        val ROTATION_KEY  = floatPreferencesKey("wheel_rotation_angle")
+        /** Set to `true` while [LoadWheelActionCallback] is downloading assets. */
+        val IS_LOADING_KEY = booleanPreferencesKey("is_loading")
     }
 }

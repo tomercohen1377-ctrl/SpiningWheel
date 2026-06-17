@@ -14,10 +14,16 @@ class SpinWheelWidgetReceiver : GlanceAppWidgetReceiver() {
 
     override val glanceAppWidget: GlanceAppWidget = SpinWheelGlanceWidget()
 
-    /** Called when the widget is first pinned. Hands off to WorkManager. */
+    /**
+     * Called when the first instance of the widget is pinned.
+     *
+     * No automatic download here — the user sees the [SpinWheelGlanceWidget.InitialContent]
+     * screen with a "Tap to load" button. Tapping it triggers [LoadWheelActionCallback]
+     * which runs the full download pipeline inside Glance's goAsync scope (no
+     * WorkManager race conditions, glanceId passed directly).
+     */
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
-        Log.d(TAG, "onEnabled — enqueueing worker")
-        WheelWidgetWorker.enqueue(context)
+        Log.d(TAG, "onEnabled — showing initial screen, waiting for user tap")
     }
 }
