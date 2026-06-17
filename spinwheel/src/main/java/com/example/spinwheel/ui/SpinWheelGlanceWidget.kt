@@ -51,29 +51,29 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
 
         provideContent {
             // Read Glance DataStore state — available synchronously inside provideContent
-            val prefs        = currentState<Preferences>()
-            val isLoading    = prefs[IS_LOADING_KEY]    ?: false
+            val prefs = currentState<Preferences>()
+            val isLoading = prefs[IS_LOADING_KEY] ?: false
             val errorMessage = prefs[ERROR_MESSAGE_KEY]
 
             val graph = SpinWheelGraph.get(context)
 
             // Read directly from disk. Any failure ends up as null bitmaps → no throw.
-            val bgBitmap    = decodeSafe(graph.repository.getImageBytes(AssetKey.BG))
+            val bgBitmap = decodeSafe(graph.repository.getImageBytes(AssetKey.BG))
             val wheelBitmap = decodeSafe(
                 graph.repository.getImageBytes(AssetKey.WHEEL),
                 context,
                 scaleDown = true,
             )
             val frameBitmap = decodeSafe(graph.repository.getImageBytes(AssetKey.FRAME))
-            val spinBitmap  = decodeSafe(graph.repository.getImageBytes(AssetKey.SPIN))
+            val spinBitmap = decodeSafe(graph.repository.getImageBytes(AssetKey.SPIN))
 
             when {
                 // Images already on disk — show the wheel
                 bgBitmap != null && wheelBitmap != null -> WheelContent(
-                    bg    = bgBitmap,
+                    bg = bgBitmap,
                     wheel = wheelBitmap,
                     frame = frameBitmap,
-                    spin  = spinBitmap,
+                    spin = spinBitmap,
                 )
                 // Something went wrong — show error with retry button
                 errorMessage != null -> ErrorContent(message = errorMessage)
@@ -94,24 +94,24 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
     @Composable
     private fun LoadingContent() {
         Box(
-            modifier         = GlanceModifier.fillMaxSize()
+            modifier = GlanceModifier.fillMaxSize()
                 .background(ColorProvider(Color(0xFF1A1A2E))),
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(text = "🎡", style = TextStyle(fontSize = 32.sp))
                 Text(
-                    text  = "Spin Wheel",
+                    text = "Spin Wheel",
                     style = TextStyle(
-                        color      = ColorProvider(Color.White),
-                        fontSize   = 14.sp,
+                        color = ColorProvider(Color.White),
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                     ),
                 )
                 Text(
-                    text  = "Downloading assets…",
+                    text = "Downloading assets…",
                     style = TextStyle(
-                        color    = ColorProvider(Color(0xFF8888AA)),
+                        color = ColorProvider(Color(0xFF8888AA)),
                         fontSize = 11.sp,
                     ),
                 )
@@ -129,25 +129,25 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
     @Composable
     private fun InitialContent() {
         Box(
-            modifier         = GlanceModifier.fillMaxSize()
+            modifier = GlanceModifier.fillMaxSize()
                 .background(ColorProvider(Color(0xFF1A1A2E))),
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(text = "🎡", style = TextStyle(fontSize = 40.sp))
                 Text(
-                    text  = "Spin Wheel",
+                    text = "Spin Wheel",
                     style = TextStyle(
-                        color      = ColorProvider(Color.White),
-                        fontSize   = 16.sp,
+                        color = ColorProvider(Color.White),
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                     ),
                 )
                 Text(
-                    text  = "Tap to load",
+                    text = "Tap to load",
                     style = TextStyle(
-                        color      = ColorProvider(Color(0xFFFFD700)),
-                        fontSize   = 13.sp,
+                        color = ColorProvider(Color(0xFFFFD700)),
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                     ),
                     modifier = GlanceModifier
@@ -165,32 +165,32 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
     @Composable
     private fun ErrorContent(message: String) {
         Box(
-            modifier         = GlanceModifier.fillMaxSize()
+            modifier = GlanceModifier.fillMaxSize()
                 .background(ColorProvider(Color(0xFF1A1A2E))),
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(text = "⚠️", style = TextStyle(fontSize = 32.sp))
                 Text(
-                    text  = "Failed to load",
+                    text = "Failed to load",
                     style = TextStyle(
-                        color      = ColorProvider(Color(0xFFFF6B6B)),
-                        fontSize   = 14.sp,
+                        color = ColorProvider(Color(0xFFFF6B6B)),
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                     ),
                 )
                 Text(
-                    text  = message,
+                    text = message,
                     style = TextStyle(
-                        color    = ColorProvider(Color(0xFF8888AA)),
+                        color = ColorProvider(Color(0xFF8888AA)),
                         fontSize = 10.sp,
                     ),
                 )
                 Text(
-                    text  = "Tap to retry",
+                    text = "Tap to retry",
                     style = TextStyle(
-                        color      = ColorProvider(Color(0xFFFFD700)),
-                        fontSize   = 13.sp,
+                        color = ColorProvider(Color(0xFFFFD700)),
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                     ),
                     modifier = GlanceModifier
@@ -207,40 +207,40 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
         frame: Bitmap?,
         spin: Bitmap?,
     ) {
-        val prefs         = currentState<Preferences>()
+        val prefs = currentState<Preferences>()
         val rotationAngle = prefs[ROTATION_KEY] ?: 0f
 
         Box(
-            modifier         = GlanceModifier.fillMaxSize(),
+            modifier = GlanceModifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
             Image(
-                provider           = ImageProvider(bg),
+                provider = ImageProvider(bg),
                 contentDescription = "Background",
-                modifier           = GlanceModifier.fillMaxSize(),
+                modifier = GlanceModifier.fillMaxSize(),
             )
 
             val rotatedWheel =
                 if (rotationAngle != 0f) rotateBitmap(wheel, rotationAngle) else wheel
             Image(
-                provider           = ImageProvider(rotatedWheel),
+                provider = ImageProvider(rotatedWheel),
                 contentDescription = "Spinning Wheel",
-                modifier           = GlanceModifier.size(220.dp),
+                modifier = GlanceModifier.size(220.dp),
             )
 
             frame?.let {
                 Image(
-                    provider           = ImageProvider(it),
+                    provider = ImageProvider(it),
                     contentDescription = "Wheel Frame",
-                    modifier           = GlanceModifier.size(240.dp),
+                    modifier = GlanceModifier.size(240.dp),
                 )
             }
 
             spin?.let {
                 Image(
-                    provider           = ImageProvider(it),
+                    provider = ImageProvider(it),
                     contentDescription = "Tap to Spin",
-                    modifier           = GlanceModifier
+                    modifier = GlanceModifier
                         .size(72.dp)
                         .clickable(onClick = actionRunCallback<SpinActionCallback>()),
                 )
@@ -263,8 +263,8 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
      */
     private fun decodeSafe(
         bytes: ByteArray?,
-        context: Context?   = null,
-        scaleDown: Boolean  = false,
+        context: Context? = null,
+        scaleDown: Boolean = false,
     ): Bitmap? {
         if (bytes == null || bytes.isEmpty()) return null
         val src = try {
@@ -294,9 +294,11 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
     }
 
     companion object {
-        val ROTATION_KEY    = floatPreferencesKey("wheel_rotation_angle")
+        val ROTATION_KEY = floatPreferencesKey("wheel_rotation_angle")
+
         /** Set to `true` while [LoadWheelActionCallback] is downloading assets. */
-        val IS_LOADING_KEY  = booleanPreferencesKey("is_loading")
+        val IS_LOADING_KEY = booleanPreferencesKey("is_loading")
+
         /** Non-null when the last load attempt failed. Cleared on retry. */
         val ERROR_MESSAGE_KEY = stringPreferencesKey("error_message")
     }

@@ -37,7 +37,7 @@ class LoadWheelActionCallback : ActionCallback {
 
         // Success — clear loading + error flags, show wheel
         updateAppWidgetState(context, glanceId) { prefs ->
-            prefs[SpinWheelGlanceWidget.IS_LOADING_KEY]  = false
+            prefs[SpinWheelGlanceWidget.IS_LOADING_KEY] = false
             prefs.remove(SpinWheelGlanceWidget.ERROR_MESSAGE_KEY)
         }
         SpinWheelGlanceWidget().update(context, glanceId)
@@ -54,7 +54,7 @@ class LoadWheelActionCallback : ActionCallback {
     private suspend fun showError(context: Context, glanceId: GlanceId, message: String) {
         Log.e(TAG, "Load failed: $message")
         updateAppWidgetState(context, glanceId) { prefs ->
-            prefs[SpinWheelGlanceWidget.IS_LOADING_KEY]    = false
+            prefs[SpinWheelGlanceWidget.IS_LOADING_KEY] = false
             prefs[SpinWheelGlanceWidget.ERROR_MESSAGE_KEY] = message
         }
         SpinWheelGlanceWidget().update(context, glanceId)

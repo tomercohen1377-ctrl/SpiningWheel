@@ -64,15 +64,15 @@ class SpinActionCallback : ActionCallback {
         // ── 2. Calculate total rotation delta ────────────────────────────── //
         // 5–8 full rotations + random landing angle
         val fullRotations = (5..8).random()
-        val partialDeg    = (0..359).random().toFloat()
-        val totalDelta    = fullRotations * 360f + partialDeg
+        val partialDeg = (0..359).random().toFloat()
+        val totalDelta = fullRotations * 360f + partialDeg
 
         // ── 3. Animate: quintic ease-out flip-book ───────────────────────── //
         for (frame in 1..ANIMATION_FRAMES) {
-            val t       = frame.toFloat() / ANIMATION_FRAMES
+            val t = frame.toFloat() / ANIMATION_FRAMES
 
             // Quintic ease-out — fast start, very gradual deceleration at end
-            val eased   = 1f - (1f - t).pow(5)
+            val eased = 1f - (1f - t).pow(5)
 
             val current = (baseAngle + totalDelta * eased) % 360f
 
