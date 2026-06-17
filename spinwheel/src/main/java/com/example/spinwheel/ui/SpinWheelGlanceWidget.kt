@@ -13,6 +13,8 @@ import androidx.compose.ui.unit.sp
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
@@ -301,5 +303,14 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
 
         /** Non-null when the last load attempt failed. Cleared on retry. */
         val ERROR_MESSAGE_KEY = stringPreferencesKey("error_message")
+
+        /** Total spin duration in ms — comes from Firebase RC `wheel.rotation.duration`. */
+        val SPIN_DURATION_MS = longPreferencesKey("spin_duration_ms")
+
+        /** Minimum full rotations per spin — comes from `wheel.rotation.minimumSpins`. */
+        val MIN_SPINS = intPreferencesKey("min_spins")
+
+        /** Maximum full rotations per spin — comes from `wheel.rotation.maximumSpins`. */
+        val MAX_SPINS = intPreferencesKey("max_spins")
     }
 }

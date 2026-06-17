@@ -35,10 +35,17 @@ class LoadWheelActionCallback : ActionCallback {
             return
         }
 
-        // Success — clear loading + error flags, show wheel
+        // Success — clear loading + error flags, persist the animation
+        // parameters from the parsed Firebase config so the spin action
+        // callback can read them on tap (no need to re-parse JSON), and
+        // re-render.
         updateAppWidgetState(context, glanceId) { prefs ->
             prefs[SpinWheelGlanceWidget.IS_LOADING_KEY] = false
             prefs.remove(SpinWheelGlanceWidget.ERROR_MESSAGE_KEY)
+            // Animation parameters from Firebase RC, written once per load.
+            prefs[SpinWheelGlanceWidget.SPIN_DURATION_MS] = config.spinDurationMs
+            prefs[SpinWheelGlanceWidget.MIN_SPINS]        = config.minSpins
+            prefs[SpinWheelGlanceWidget.MAX_SPINS]        = config.maxSpins
         }
         SpinWheelGlanceWidget().update(context, glanceId)
     }

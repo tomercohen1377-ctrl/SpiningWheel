@@ -54,6 +54,8 @@ class SpinWheelRepositoryImpl(
         SpinWheelConfig(
             host         = item.network.assets.host.trim().ifBlank { return null },
             spinDurationMs = item.wheel.rotation.duration,
+            minSpins     = item.wheel.rotation.minimumSpins,
+            maxSpins     = item.wheel.rotation.maximumSpins,
             assetIds     = mapOf(
                 AssetKey.BG    to item.wheel.assets.bg,
                 AssetKey.WHEEL to item.wheel.assets.wheel,

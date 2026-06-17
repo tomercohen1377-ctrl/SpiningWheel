@@ -1,6 +1,7 @@
 package com.example.spinwheel.ui
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.preferences.core.Preferences
 import androidx.glance.GlanceId
 import androidx.glance.action.ActionParameters
@@ -14,39 +15,39 @@ import kotlin.math.pow
 /**
  * Glance [ActionCallback] invoked when the user taps the spin button.
  *
- * ## Animation design
+ * ## Animation technique
  *
  * Glance widgets run via `RemoteViews` — standard Compose animation APIs
- * (`Animatable`, `graphicsLayer`) are unavailable.  The animation is a
- * "flip-book": each frame writes a new angle to DataStore Preferences,
+ * (`Animatable`, `graphicsLayer`) are unavailable. The animation is a
+ * "flip-book": each frame writes a new angle to DataStore Preferences
  * then calls `widget.update()` to push a fresh `RemoteViews`.
  *
- * ### Easing: quintic ease-out
- * ```
- * eased = 1 - (1 - t)^5
- * ```
- * vs. the old quadratic `1 - (1 - t)²`:
+ * ## Parameters sourced from Firebase Remote Config
  *
- * ```
- *  1 │         ╭────────  quintic  (this)
- *    │      ╭──╯
- *    │    ╭─╯              quadratic (old)
- *    │  ╭─╯
- *    │ ╭╯
- *  0 └──────────────────────> t
- *    0                        1
- * ```
- * Quintic starts much faster and decelerates far more gradually —
- * this mimics the feel of a physical spinning wheel slowing down
- * rather than a smooth mechanical deceleration.
+ * | RC field                          | Read from widget pref         | Fallback      |
+ * |-----------------------------------|-------------------------------|---------------|
+ * | `wheel.rotation.duration` (ms)    | [SpinWheelGlanceWidget.SPIN_DURATION_MS] | [DEFAULT_SPIN_DURATION_MS] |
+ * | `wheel.rotation.minimumSpins`     | [SpinWheelGlanceWidget.MIN_SPINS]        | [DEFAULT_MIN_SPINS]        |
+ * | `wheel.rotation.maximumSpins`     | [SpinWheelGlanceWidget.MAX_SPINS]        | [DEFAULT_MAX_SPINS]        |
  *
- * ### Parameters
- * | Parameter        | Old  | New  | Effect                         |
- * |------------------|------|------|--------------------------------|
- * | ANIMATION_FRAMES | 20   | 50   | ~2.5× more frames → smoother  |
- * | FRAME_DELAY_MS   | 80   | 60   | faster frame rate              |
- * | Total duration   | 1.6s | 3.0s | more satisfying spin           |
- * | Full rotations   | 3–5  | 5–8  | wheel travels further          |
+ * The three values are written to widget prefs once per successful load
+ * (by [LoadWheelActionCallback]). The fallbacks match the values in
+ * `docs/firebase_rc_wheel_config.json` so the spin still feels right if
+ * the user somehow gets to a state where no load has ever succeeded.
+ *
+ * ## Frame-level math
+ *
+ * - Total duration is fixed (the Firebase-configured value, clamped).
+ * - Frame count = `duration / FRAME_DELAY_MS`, clamped to a sensible range
+ *   so a misconfigured Firebase (e.g. duration=1_000_000) can't lock up
+ *   the worker / burn the battery.
+ * - Full rotations = a random integer in `[minSpins..maxSpins]` +
+ *   a random landing angle in `[0..359]`.
+ *
+ * ## Easing: quintic ease-out (`1 - (1 - t)^5`)
+ *
+ * Quintic starts much faster and decelerates far more gradually than a
+ * quadratic ease — it mimics a physical wheel slowing down.
  */
 class SpinActionCallback : ActionCallback {
 
@@ -55,41 +56,78 @@ class SpinActionCallback : ActionCallback {
         glanceId: GlanceId,
         parameters: ActionParameters
     ) {
-        // ── 1. Read current wheel angle ──────────────────────────────────── //
-        val currentPrefs = getAppWidgetState<Preferences>(
+        // ── 1. Read current wheel angle + animation params from widget prefs ── //
+        val prefs = getAppWidgetState<Preferences>(
             context, PreferencesGlanceStateDefinition, glanceId
         )
-        val baseAngle = currentPrefs[SpinWheelGlanceWidget.ROTATION_KEY] ?: 0f
+        val baseAngle = prefs[SpinWheelGlanceWidget.ROTATION_KEY] ?: 0f
 
-        // ── 2. Calculate total rotation delta ────────────────────────────── //
-        // 5–8 full rotations + random landing angle
-        val fullRotations = (5..8).random()
-        val partialDeg = (0..359).random().toFloat()
+        val durationMs = prefs[SpinWheelGlanceWidget.SPIN_DURATION_MS] ?: DEFAULT_SPIN_DURATION_MS
+        val minSpins   = prefs[SpinWheelGlanceWidget.MIN_SPINS]         ?: DEFAULT_MIN_SPINS
+        val maxSpins   = prefs[SpinWheelGlanceWidget.MAX_SPINS]         ?: DEFAULT_MAX_SPINS
+
+        // ── 2. Compute animation parameters ───────────────────────────────── //
+        val frameCount = framesFromDuration(durationMs)
+        val fullRotations = (minSpins..maxSpins).random()
+        val partialDeg = (0..MAX_PARTIAL_DEG).random().toFloat()
         val totalDelta = fullRotations * 360f + partialDeg
 
+        Log.d(
+            TAG,
+            "spin start — duration=${durationMs}ms frames=$frameCount rotations=$fullRotations",
+        )
+
         // ── 3. Animate: quintic ease-out flip-book ───────────────────────── //
-        for (frame in 1..ANIMATION_FRAMES) {
-            val t = frame.toFloat() / ANIMATION_FRAMES
+        for (frame in 1..frameCount) {
+            val t = frame.toFloat() / frameCount
 
             // Quintic ease-out — fast start, very gradual deceleration at end
-            val eased = 1f - (1f - t).pow(5)
+            val eased = 1f - (1f - t).pow(QUINTIC_EXPONENT)
 
             val current = (baseAngle + totalDelta * eased) % 360f
 
-            updateAppWidgetState(context, glanceId) { prefs ->
-                prefs[SpinWheelGlanceWidget.ROTATION_KEY] = current
+            updateAppWidgetState(context, glanceId) { p ->
+                p[SpinWheelGlanceWidget.ROTATION_KEY] = current
             }
             SpinWheelGlanceWidget().update(context, glanceId)
 
             delay(FRAME_DELAY_MS)
         }
+
+        Log.d(TAG, "spin complete — final angle=${(baseAngle + totalDelta) % 360f}°")
+    }
+
+    /**
+     * Convert the configured total duration into a frame count, clamped
+     * to a sensible range so weird remote-config values can't lock up the
+     * widget host or burn battery.
+     */
+    private fun framesFromDuration(durationMs: Long): Int {
+        val raw = (durationMs / FRAME_DELAY_MS).toInt()
+        return raw.coerceIn(MIN_FRAME_COUNT, MAX_FRAME_COUNT)
     }
 
     companion object {
-        /** Frames in the spin animation. More frames = smoother motion. */
-        private const val ANIMATION_FRAMES = 50
+        private const val TAG = "SpinActionCallback"
 
-        /** Delay between frames.  50 × 60 ms = 3 000 ms total duration. */
+        /** Delay between animation frames. Smaller = smoother, more battery. */
         private const val FRAME_DELAY_MS = 60L
+
+        /** Quintic exponent — `5` gives a physical-feel decel. */
+        private const val QUINTIC_EXPONENT = 5
+
+        /** Frame-count clamp — keeps the animation within sane bounds. */
+        private const val MIN_FRAME_COUNT = 20
+        private const val MAX_FRAME_COUNT = 200
+
+        /** Inclusive upper bound of the random landing angle (0–359). */
+        private const val MAX_PARTIAL_DEG = 359
+
+        /** Defaults used when the widget hasn't been synced yet. Match the
+         *  values in `docs/firebase_rc_wheel_config.json` so behaviour is
+         *  identical to a fresh install with a successful load. */
+        private const val DEFAULT_SPIN_DURATION_MS = 3_000L
+        private const val DEFAULT_MIN_SPINS = 5
+        private const val DEFAULT_MAX_SPINS = 8
     }
 }

@@ -9,7 +9,13 @@ import com.example.spinwheel.data.local.ImageUrls
  */
 data class SpinWheelConfig(
     val host: String,
+    /** Total spin duration in ms — comes from `wheel.rotation.duration` in Firebase RC. */
     val spinDurationMs: Long,
+    /** Minimum number of full rotations per spin — comes from `wheel.rotation.minimumSpins`. */
+    val minSpins: Int,
+    /** Maximum number of full rotations per spin — comes from `wheel.rotation.maximumSpins`. */
+    val maxSpins: Int,
+    /** File IDs for each image layer, joined with [host] to form a full URL. */
     val assetIds: Map<AssetKey, String>,
 )
 
