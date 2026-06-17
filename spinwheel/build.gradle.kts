@@ -40,38 +40,28 @@ android {
 }
 
 dependencies {
-    // ── Glance ────────────────────────────────────────────────────────��──── //
-    // Translates @Composable functions → RemoteViews for the home-screen widget
+    // ── Glance ──────────────────────────────────────────────────────────── //
     implementation(libs.glance.appwidget)
     implementation(libs.glance.material3)
 
-    // Compose BOM — pin Compose runtime version (Glance uses it internally)
     implementation(platform(libs.androidx.compose.bom))
 
-    // ── Networking ────────────────────────────────────────────────��───────── //
-    // OkHttp — download JSON config + 4 image assets from Google Drive
+    // ── Networking ───────────────────────────────────────────────────────── //
     implementation(libs.okhttp)
 
-    // ── Serialization ────────────────────────────────────────��───────────── //
+    // ── Serialization ───────────────────────────────────────────────────── //
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.serialization.cbor)
 
     // ── Coroutines ────────────────────────────────────────────────────────── //
-    // Needed for GlanceAppWidget.provideGlance() + ActionCallback.onAction()
     implementation(libs.kotlinx.coroutines.android)
-    // Needed for Firebase Task.await() inside suspend functions
     implementation(libs.kotlinx.coroutines.play.services)
 
     // ── Firebase Remote Config ─────────────────────────────────────────────── //
-    // The widget fetches wheel_config JSON directly from Firebase RC — no app
-    // launch needed. FirebaseInitProvider (ContentProvider) starts Firebase
-    // automatically when the widget process is created by the system.
     implementation(platform(libs.firebase.bom))
     implementation("com.google.firebase:firebase-config")
 
-    // ── WorkManager ───────────────────────────────────────��───────────────── //
-    // Keeps sync work alive after BroadcastReceiver.onReceive() returns.
-    // Required for reliable widget loading without opening the app.
+    // ── WorkManager ──────────────────────────────────────────────────────── //
     implementation(libs.androidx.work.runtime.ktx)
 
     // ── Core ──────────────────────────────────────────────────────────────── //

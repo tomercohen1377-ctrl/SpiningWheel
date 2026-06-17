@@ -1,10 +1,11 @@
 package com.example.spinwheel
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import android.util.TypedValue
-import androidx.compose.runtime.Composable
+import android.util.Log
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -12,13 +13,11 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
-import androidx.glance.GlanceTheme
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.action.actionRunCallback
-import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.currentState
@@ -26,170 +25,198 @@ import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.fillMaxSize
-import androidx.glance.layout.padding
 import androidx.glance.layout.size
-import androidx.glance.layout.wrapContentSize
 import androidx.glance.state.GlanceStateDefinition
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
+import com.example.spinwheel.data.local.AssetKey
+import com.example.spinwheel.di.SpinWheelGraph
 
 /**
- * Jetpack Glance home-screen widget for the Spin Wheel.
+ * State-driven Glance widget.
  *
- * Glance uses `@Composable` syntax and translates the layout into Android
- * `RemoteViews` — no XML required. The widget has four layers:
+ * ## Design rules (learned the hard way)
  *
- * 1. **Background** — full-bleed image (bg)
- * 2. **Wheel** — rotating bitmap, angle stored in DataStore Preferences
- * 3. **Frame** — static decorative overlay
- * 4. **Spin button** — tappable; fires [SpinActionCallback]
+ * 1. **`provideGlance` must NEVER throw.** Any uncaught exception crashes
+ *    the widget host which then shows "Can't load widget" to the user.
+ *    Every BitmapFactory call is wrapped in a safe decode helper that
+ *    returns `null` on failure.
  *
- * If assets have not been downloaded yet, a dark loading card is shown
- * with a prompt to open the app and tap "Sync Assets from Drive".
+ * 2. **No background `launch` from inside `provideGlance`.** Using
+ *    `coroutineScope { launch { … } }` inside the suspend `provideGlance`
+ *    is a bug — when this block returns, the scope cancels, killing the
+ *    launched collector. We learned this empirically: this is what caused
+ *    the "Can't load widget" error.
+ *
+ * 3. **The widget is a pure renderer.** It reads whatever is in the local
+ *    data source and renders it. The Receiver + Worker push `update()`
+ *    calls after every successful sync to drive re-renders. This is
+ *    the official Glance pattern for widgets that don't need their own
+ *    long-lived collectors.
  */
+private const val TAG = "SpinWheelWidget"
+
+
 class SpinWheelGlanceWidget : GlanceAppWidget() {
 
-    override val stateDefinition: GlanceStateDefinition<*> = PreferencesGlanceStateDefinition
+    override val stateDefinition = PreferencesGlanceStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        // Load cached bitmaps via the repository (file I/O, no network calls here)
-        val repo        = SpinWheelRepository(context)
-        val bgBitmap    = repo.getCachedBitmap(FILE_BG)
-        val frameBitmap = repo.getCachedBitmap(FILE_FRAME)
-        val spinBitmap  = repo.getCachedBitmap(FILE_SPIN)
+        Log.d(TAG, "provideGlance invoked")
 
-        // Pre-scale the wheel bitmap to the display size (260 dp).
-        //
-        // rotateBitmap() is called on EVERY animation frame (50 times).
-        // Without scaling, it rotates the full-resolution source bitmap each
-        // time — e.g. a 600×600 source = 1.44 MB per frame = 72 MB of GC
-        // pressure over the animation.  Scaling to ~260 dp first reduces the
-        // per-frame bitmap to ~400×400 = 0.61 MB → 6× less memory churn.
-        val rawWheel = repo.getCachedBitmap(FILE_WHEEL)
-        val density  = context.resources.displayMetrics.density
-        val targetPx = (260f * density).toInt().coerceAtLeast(64)
-        val wheelBitmap = rawWheel?.let { bmp ->
-            if (bmp.width > targetPx) {
-                Bitmap.createScaledBitmap(bmp, targetPx, targetPx, true)
-                    .also { if (it !== bmp) bmp.recycle() }
-            } else bmp
-        }
 
         provideContent {
-            val assetsReady = bgBitmap != null && wheelBitmap != null
 
-            if (!assetsReady) {
+            val graph = SpinWheelGraph.get(context)
+
+            // Read directly from disk. Any failure here ends up as null bitmaps,
+            // which fall back to LoadingContent — not a thrown exception.
+            val bgBitmap   = decodeSafe(graph.repository.getImageBytes(AssetKey.BG))
+            val wheelBitmap = decodeSafe(
+                graph.repository.getImageBytes(AssetKey.WHEEL),
+                context,
+                scaleDown = true,
+            )
+            val frameBitmap = decodeSafe(graph.repository.getImageBytes(AssetKey.FRAME))
+            val spinBitmap  = decodeSafe(graph.repository.getImageBytes(AssetKey.SPIN))
+
+
+            if (bgBitmap == null || wheelBitmap == null) {
                 LoadingContent()
             } else {
                 WheelContent(
-                    bg    = bgBitmap!!,
-                    wheel = wheelBitmap!!,
+                    bg    = bgBitmap,
+                    wheel = wheelBitmap,
                     frame = frameBitmap,
-                    spin  = spinBitmap
+                    spin  = spinBitmap,
                 )
             }
         }
     }
 
-    // ───────────────��─────────────────────────────────────────────────────── //
-    //  Loading state                                                          //
-    // ─────────────────────────────────────────────────────────────────────── //
+    // ──────────────────────────────────────────────────────────────────── //
+    //  UI                                                                  //
+    // ──────────────────────────────────────────────────────────────────── //
 
-    @Composable
+    @SuppressLint("RestrictedApi")
+    @androidx.compose.runtime.Composable
     private fun LoadingContent() {
         Box(
-            modifier         = GlanceModifier
-                .fillMaxSize()
+            modifier         = GlanceModifier.fillMaxSize()
                 .background(ColorProvider(Color(0xFF1A1A2E))),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text  = "🎡",
-                    style = TextStyle(fontSize = 32.sp)
-                )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(text = "🎡", style = TextStyle(fontSize = 32.sp))
                 Text(
                     text  = "Spin Wheel",
                     style = TextStyle(
                         color      = ColorProvider(Color.White),
                         fontSize   = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                        fontWeight = FontWeight.Bold,
+                    ),
                 )
                 Text(
                     text  = "Loading from Firebase…",
                     style = TextStyle(
                         color    = ColorProvider(Color(0xFF8888AA)),
-                        fontSize = 11.sp
-                    )
+                        fontSize = 11.sp,
+                    ),
                 )
             }
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────── //
-    //  Main widget UI                                                         //
-    // ─────────────────────────────────────────────────────────────────────── //
-
-    @Composable
+    @androidx.compose.runtime.Composable
     private fun WheelContent(
-        bg:    Bitmap,
+        bg: Bitmap,
         wheel: Bitmap,
         frame: Bitmap?,
-        spin:  Bitmap?
+        spin: Bitmap?,
     ) {
         val prefs         = currentState<Preferences>()
         val rotationAngle = prefs[ROTATION_KEY] ?: 0f
 
         Box(
             modifier         = GlanceModifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
-            // Layer 1 — Background
             Image(
                 provider           = ImageProvider(bg),
                 contentDescription = "Background",
-                modifier           = GlanceModifier.fillMaxSize()
+                modifier           = GlanceModifier.fillMaxSize(),
             )
 
-            // Layer 2 — Spinning wheel (angle applied via Matrix on the bitmap)
-            val rotatedWheel = if (rotationAngle != 0f) rotateBitmap(wheel, rotationAngle) else wheel
+            val rotatedWheel =
+                if (rotationAngle != 0f) rotateBitmap(wheel, rotationAngle) else wheel
             Image(
                 provider           = ImageProvider(rotatedWheel),
                 contentDescription = "Spinning Wheel",
-                modifier           = GlanceModifier.size(220.dp)
+                modifier           = GlanceModifier.size(220.dp),
             )
 
-            // Layer 3 — Static frame overlay
             frame?.let {
                 Image(
                     provider           = ImageProvider(it),
                     contentDescription = "Wheel Frame",
-                    modifier           = GlanceModifier.size(240.dp)
+                    modifier           = GlanceModifier.size(240.dp),
                 )
             }
 
-            // Layer 4 — Tappable spin button
             spin?.let {
                 Image(
                     provider           = ImageProvider(it),
                     contentDescription = "Tap to Spin",
                     modifier           = GlanceModifier
                         .size(72.dp)
-                        .clickable(onClick = actionRunCallback<SpinActionCallback>())
+                        .clickable(onClick = actionRunCallback<SpinActionCallback>()),
                 )
             }
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────── //
-    //  Helpers                                                                //
-    // ─────────────────────────────────────────────────────────────────────── //
+    // ──────────────────────────────────────────────────────────────────── //
+    //  Helpers                                                              //
+    // ──────────────────────────────────────────────────────────────────── //
+
+    /**
+     * Safely decodes a [ByteArray] to a [Bitmap].
+     *
+     * Returns `null` on any failure (null/empty bytes, decoder failure,
+     * out-of-memory, unsupported format, etc.). This guarantees that
+     * [provideGlance] never throws — a thrown exception inside
+     * `provideGlance` is what causes the "Can't load widget" / "Problem
+     * loading widget" error shown by Android's widget host.
+     */
+    private fun decodeSafe(
+        bytes: ByteArray?,
+        context: Context?   = null,
+        scaleDown: Boolean  = false,
+    ): Bitmap? {
+        if (bytes == null || bytes.isEmpty()) return null
+        val src = try {
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } catch (e: Throwable) {
+            return null
+        } ?: return null
+
+        if (!scaleDown || context == null) return src
+
+        val density = context.resources.displayMetrics.density
+        val targetPx = (260f * density).toInt().coerceAtLeast(64)
+        return if (src.width > targetPx) {
+            try {
+                val scaled = Bitmap.createScaledBitmap(src, targetPx, targetPx, true)
+                if (scaled !== src) src.recycle()
+                scaled
+            } catch (e: Throwable) {
+                src
+            }
+        } else src
+    }
 
     private fun rotateBitmap(source: Bitmap, degrees: Float): Bitmap {
         val matrix = Matrix().apply { postRotate(degrees) }
