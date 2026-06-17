@@ -36,23 +36,29 @@ class RemoteDataSourceImpl(
         .followSslRedirects(true)
         .build()
 
-    override suspend fun fetchConfigJson(): String? = try {
-        val rc = Firebase.remoteConfig
-        rc.setConfigSettingsAsync(
-            remoteConfigSettings { minimumFetchIntervalInSeconds = 3_600L }
-        ).await()
-        rc.fetchAndActivate().await()
-        val json = rc.getString(RC_KEY_WHEEL_CONFIG)
-        if (json.isBlank()) {
-            Log.w(TAG, "RC key '$RC_KEY_WHEEL_CONFIG' is empty — set it in Firebase Console")
+    override suspend fun fetchConfigJson(): String? = withContext(ioDispatcher) {
+        try {
+            val rc = Firebase.remoteConfig
+            // setConfigSettingsAsync + fetchAndActivate are Firebase Tasks;
+            // kotlinx-coroutines-play-services' .await() is dispatcher-safe,
+            // but we wrap the whole block in IO so no blocking work leaks to
+            // the caller's dispatcher (which may be Default or even Main).
+            rc.setConfigSettingsAsync(
+                remoteConfigSettings { minimumFetchIntervalInSeconds = 3_600L }
+            ).await()
+            rc.fetchAndActivate().await()
+            val json = rc.getString(RC_KEY_WHEEL_CONFIG)
+            if (json.isBlank()) {
+                Log.w(TAG, "RC key '$RC_KEY_WHEEL_CONFIG' is empty — set it in Firebase Console")
+                null
+            } else {
+                Log.d(TAG, "Fetched '$RC_KEY_WHEEL_CONFIG' ✓ (${json.length} chars)")
+                json
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Firebase RC fetch failed: ${e.message}", e)
             null
-        } else {
-            Log.d(TAG, "Fetched '$RC_KEY_WHEEL_CONFIG' ✓ (${json.length} chars)")
-            json
         }
-    } catch (e: Exception) {
-        Log.e(TAG, "Firebase RC fetch failed: ${e.message}", e)
-        null
     }
 
     override suspend fun fetchImage(url: String): ByteArray = withContext(ioDispatcher) {

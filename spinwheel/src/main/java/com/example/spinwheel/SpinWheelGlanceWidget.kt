@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.sp
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
@@ -27,7 +28,6 @@ import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.size
-import androidx.glance.state.GlanceStateDefinition
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
@@ -36,28 +36,7 @@ import androidx.glance.unit.ColorProvider
 import com.example.spinwheel.data.local.AssetKey
 import com.example.spinwheel.di.SpinWheelGraph
 
-/**
- * State-driven Glance widget.
- *
- * ## Design rules (learned the hard way)
- *
- * 1. **`provideGlance` must NEVER throw.** Any uncaught exception crashes
- *    the widget host which then shows "Can't load widget" to the user.
- *    Every BitmapFactory call is wrapped in a safe decode helper that
- *    returns `null` on failure.
- *
- * 2. **No background `launch` from inside `provideGlance`.** Using
- *    `coroutineScope { launch { … } }` inside the suspend `provideGlance`
- *    is a bug — when this block returns, the scope cancels, killing the
- *    launched collector. We learned this empirically: this is what caused
- *    the "Can't load widget" error.
- *
- * 3. **The widget is a pure renderer.** It reads whatever is in the local
- *    data source and renders it. The Receiver + Worker push `update()`
- *    calls after every successful sync to drive re-renders. This is
- *    the official Glance pattern for widgets that don't need their own
- *    long-lived collectors.
- */
+
 private const val TAG = "SpinWheelWidget"
 
 
@@ -71,8 +50,9 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
 
         provideContent {
             // Read Glance DataStore state — available synchronously inside provideContent
-            val prefs     = currentState<Preferences>()
-            val isLoading = prefs[IS_LOADING_KEY] ?: false
+            val prefs        = currentState<Preferences>()
+            val isLoading    = prefs[IS_LOADING_KEY]    ?: false
+            val errorMessage = prefs[ERROR_MESSAGE_KEY]
 
             val graph = SpinWheelGraph.get(context)
 
@@ -94,6 +74,8 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
                     frame = frameBitmap,
                     spin  = spinBitmap,
                 )
+                // Something went wrong — show error with retry button
+                errorMessage != null -> ErrorContent(message = errorMessage)
                 // Download in progress — show a spinner text
                 isLoading -> LoadingContent()
                 // Nothing yet — show the "Load Wheel" button
@@ -162,6 +144,49 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
                 )
                 Text(
                     text  = "Tap to load",
+                    style = TextStyle(
+                        color      = ColorProvider(Color(0xFFFFD700)),
+                        fontSize   = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    modifier = GlanceModifier
+                        .clickable(onClick = actionRunCallback<LoadWheelActionCallback>()),
+                )
+            }
+        }
+    }
+
+    /**
+     * Shown when the config fetch or image download failed.
+     * Tapping "Retry" clears the error state and runs the pipeline again.
+     */
+    @SuppressLint("RestrictedApi")
+    @androidx.compose.runtime.Composable
+    private fun ErrorContent(message: String) {
+        Box(
+            modifier         = GlanceModifier.fillMaxSize()
+                .background(ColorProvider(Color(0xFF1A1A2E))),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(text = "⚠️", style = TextStyle(fontSize = 32.sp))
+                Text(
+                    text  = "Failed to load",
+                    style = TextStyle(
+                        color      = ColorProvider(Color(0xFFFF6B6B)),
+                        fontSize   = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+                Text(
+                    text  = message,
+                    style = TextStyle(
+                        color    = ColorProvider(Color(0xFF8888AA)),
+                        fontSize = 10.sp,
+                    ),
+                )
+                Text(
+                    text  = "Tap to retry",
                     style = TextStyle(
                         color      = ColorProvider(Color(0xFFFFD700)),
                         fontSize   = 13.sp,
@@ -268,8 +293,10 @@ class SpinWheelGlanceWidget : GlanceAppWidget() {
     }
 
     companion object {
-        val ROTATION_KEY  = floatPreferencesKey("wheel_rotation_angle")
+        val ROTATION_KEY    = floatPreferencesKey("wheel_rotation_angle")
         /** Set to `true` while [LoadWheelActionCallback] is downloading assets. */
-        val IS_LOADING_KEY = booleanPreferencesKey("is_loading")
+        val IS_LOADING_KEY  = booleanPreferencesKey("is_loading")
+        /** Non-null when the last load attempt failed. Cleared on retry. */
+        val ERROR_MESSAGE_KEY = stringPreferencesKey("error_message")
     }
 }
