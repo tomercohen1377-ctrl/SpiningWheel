@@ -1,0 +1,28 @@
+// React Native 0.76 settings.gradle — uses the settings plugin from
+// @react-native/gradle-plugin for autolinking, NOT the legacy
+// native_modules.gradle (which was removed in CLI 15+).
+
+pluginManagement {
+    // The settings plugin lives in node_modules — we bring it into the
+    // build by `includeBuild` instead of pulling from Maven.
+    includeBuild("../node_modules/@react-native/gradle-plugin")
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+plugins {
+    // Registers autolinkLibrariesFromCommand() under
+    // com.facebook.react.ReactSettingsExtension.
+    id("com.facebook.react.settings")
+}
+
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+    ex.autolinkLibrariesFromCommand()
+}
+
+rootProject.name = 'demo-spinwheel-app'
+
+include(":app")

@@ -1,0 +1,60 @@
+// Top-level build file for the React Native demo.
+//
+// AGP / Kotlin / Gradle versions are pinned to match what
+// @react-native/gradle-plugin@0.76.5 was built and tested against. A
+// version skew here is what produces the "JvmVendorSpec does not have
+// member field IBM_SEMERU" / "react-native-gradle-plugin not found" errors.
+//
+// IMPORTANT: Gradle DSL rule — `buildscript {}` must appear BEFORE any
+// `plugins {}` block in the same script.
+
+buildscript {
+    ext {
+        buildToolsVersion = "35.0.0"
+        minSdkVersion = 24
+        compileSdkVersion = 35
+        targetSdkVersion = 35
+        ndkVersion = "26.1.10909125"
+        kotlinVersion = "1.9.24"
+    }
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // AGP 8.6.0 — pinned to RN 0.76's tested version.
+        classpath("com.android.tools.build:gradle:8.6.0")
+        // Kotlin 1.9.24 — pinned.
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24")
+        // NOTE: no classpath for "com.facebook.react:react-native-gradle-plugin".
+        // That Maven coordinate doesn't exist; the plugin ID is contributed
+        // by the includeBuild in settings.gradle.
+    }
+}
+
+plugins {
+    // Apply the root-project React plugin via the `plugins {}` block — this
+    // is how `pluginManagement.includeBuild` actually surfaces IDs to the
+    // build script. `apply plugin: "id"` (the legacy syntax) does NOT consult
+    // `pluginManagement.includeBuild` for the root project, which is why the
+    // initial setup hit "Plugin with id ... not found".
+    id("com.facebook.react.rootproject")
+}
+
+// Pin JVM target to 17 across every subproject (including the autolinked
+// `react-native-spinwheel` library). Without this, AGP 8.6 + Java 17
+// compileJavaTargets to 17 while the spinwheel module's Kotlin defaults to
+// JVM 11, producing "Inconsistent JVM-target compatibility detected".
+//
+// We use `tasks.withType` + `configureEach` (NOT `afterEvaluate`) because
+// `afterEvaluate` fires only once per project — by the time we reach this
+// line the included plug-in subprojects may already be past their evaluate
+// phase ("Cannot run afterEvaluate when already evaluated").
+// `tasks.withType` is reactive: it matches tasks as they're created.
+subprojects {
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions {
+            jvmTarget = "17"
+        }
+    }
+}
