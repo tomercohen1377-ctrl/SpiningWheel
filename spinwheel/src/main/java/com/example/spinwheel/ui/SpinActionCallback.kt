@@ -9,6 +9,9 @@ import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.state.PreferencesGlanceStateDefinition
+import com.example.spinwheel.ui.SpinActionCallback.Companion.DEFAULT_MAX_SPINS
+import com.example.spinwheel.ui.SpinActionCallback.Companion.DEFAULT_MIN_SPINS
+import com.example.spinwheel.ui.SpinActionCallback.Companion.DEFAULT_SPIN_DURATION_MS
 import kotlinx.coroutines.delay
 import kotlin.math.pow
 
@@ -41,7 +44,7 @@ import kotlin.math.pow
  * - Frame count = `duration / FRAME_DELAY_MS`, clamped to a sensible range
  *   so a misconfigured Firebase (e.g. duration=1_000_000) can't lock up
  *   the worker / burn the battery.
- * - Full rotations = a random integer in `[minSpins..maxSpins]` +
+ * - Full rotations = a random integer in `[minSpins to maxSpins]` +
  *   a random landing angle in `[0..359]`.
  *
  * ## Easing: quintic ease-out (`1 - (1 - t)^5`)
@@ -63,8 +66,8 @@ class SpinActionCallback : ActionCallback {
         val baseAngle = prefs[SpinWheelGlanceWidget.ROTATION_KEY] ?: 0f
 
         val durationMs = prefs[SpinWheelGlanceWidget.SPIN_DURATION_MS] ?: DEFAULT_SPIN_DURATION_MS
-        val minSpins   = prefs[SpinWheelGlanceWidget.MIN_SPINS]         ?: DEFAULT_MIN_SPINS
-        val maxSpins   = prefs[SpinWheelGlanceWidget.MAX_SPINS]         ?: DEFAULT_MAX_SPINS
+        val minSpins = prefs[SpinWheelGlanceWidget.MIN_SPINS] ?: DEFAULT_MIN_SPINS
+        val maxSpins = prefs[SpinWheelGlanceWidget.MAX_SPINS] ?: DEFAULT_MAX_SPINS
 
         // ── 2. Compute animation parameters ───────────────────────────────── //
         val frameCount = framesFromDuration(durationMs)

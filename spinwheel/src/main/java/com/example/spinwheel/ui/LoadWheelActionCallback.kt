@@ -44,8 +44,8 @@ class LoadWheelActionCallback : ActionCallback {
             prefs.remove(SpinWheelGlanceWidget.ERROR_MESSAGE_KEY)
             // Animation parameters from Firebase RC, written once per load.
             prefs[SpinWheelGlanceWidget.SPIN_DURATION_MS] = config.spinDurationMs
-            prefs[SpinWheelGlanceWidget.MIN_SPINS]        = config.minSpins
-            prefs[SpinWheelGlanceWidget.MAX_SPINS]        = config.maxSpins
+            prefs[SpinWheelGlanceWidget.MIN_SPINS] = config.minSpins
+            prefs[SpinWheelGlanceWidget.MAX_SPINS] = config.maxSpins
         }
         SpinWheelGlanceWidget().update(context, glanceId)
     }
