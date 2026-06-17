@@ -1,11 +1,11 @@
 package com.example.spinwheel
 
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
 import android.util.Log
-import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.glance.appwidget.AppWidgetId
 import androidx.glance.appwidget.GlanceAppWidgetManager
-import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.glance.appwidget.updateAll
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -63,22 +63,37 @@ class WheelWidgetWorker(
             Log.d(TAG, "All images downloaded ✓")
 
             // ── Step 3: push the widget update ────────────────────────────── //
-            // Done directly inside doWork (not launch + forget) so WorkManager's
-            // wakelock is still held until the Glance render completes.
-            val manager = GlanceAppWidgetManager(applicationContext)
+            //
+            // WHY we bypass GlanceAppWidgetManager.getGlanceIds:
+            // getGlanceIds reads from Glance's internal DataStore which is
+            // populated by GlanceAppWidgetReceiver.onUpdate's goAsync block via
+            // updateManager(). WorkManager can wake and run the worker BEFORE
+            // that async bootstrap completes → getGlanceIds returns empty →
+            // no update() call → widget stays on "Loading" forever.
+            //
+            // Fix: query the system AppWidgetManager directly. It knows about
+            // every pinned widget ID the moment the launcher places it — no
+            // async bootstrap required. Then construct AppWidgetId (the Glance
+            // wrapper) manually and call update() which triggers provideGlance.
+            val awm = AppWidgetManager.getInstance(applicationContext)
+            val receiverComponent = ComponentName(
+                applicationContext,
+                SpinWheelWidgetReceiver::class.java,
+            )
+            val rawIds = awm.getAppWidgetIds(receiverComponent)
+            Log.d(TAG, "AppWidgetManager.getAppWidgetIds = ${rawIds.toList()}")
 
-            manager.getGlanceIds(SpinWheelGlanceWidget::class.java)
-                .forEach { id ->
+            if (rawIds.isEmpty()) {
+                Log.w(TAG, "No widget IDs found — widget not pinned yet?")
+            }
 
-                    updateAppWidgetState(applicationContext, id) { prefs ->
-                        prefs[floatPreferencesKey("version")] =
-                            System.currentTimeMillis().toFloat()
-                    }
+            rawIds.forEach { rawId ->
+                val glanceId = AppWidgetId(rawId)
+                Log.d(TAG, "Calling update for id=$rawId")
+                SpinWheelGlanceWidget().update(applicationContext, glanceId)
+            }
 
-                    SpinWheelGlanceWidget().update(applicationContext, id)
-                }
-
-            Log.d(TAG, "updateAll() returned")
+            Log.d(TAG, "Widget update loop done")
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "doWork() failed: ${e.message}", e)
