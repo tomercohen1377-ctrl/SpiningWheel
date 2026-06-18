@@ -49,9 +49,30 @@ export default function App(): React.JSX.Element {
   const [loading, setLoading]     = useState<boolean>(false);
   const [lastSync, setLastSync]   = useState<string>('Never');
 
-  // Load last-sync timestamp on mount
+  // Load last-sync timestamp on mount, and auto-sync on first launch so the
+  // user doesn't need to tap the button. After the auto-sync (or after a
+  // manual one) we still respect "Never" state and re-attempt.
   useEffect(() => {
-    refreshTimestamp();
+    (async () => {
+      await refreshTimestamp();
+      try {
+        const ts = await SpinWheelModule.getLastFetchTime();
+        if (ts === 0) {
+          // First open after install: silently sync so the home-screen widget
+          // works without any user action.
+          setLoading(true);
+          const ok = await SpinWheelModule.syncWidgetConfiguration(
+            CONFIG_URL, BG_URL, WHEEL_URL, FRAME_URL, SPIN_URL
+          );
+          if (ok) {
+            await refreshTimestamp();
+          }
+          setLoading(false);
+        }
+      } catch {
+        // best-effort; the manual Sync button still works as a fallback
+      }
+    })();
   }, []);
 
   const refreshTimestamp = useCallback(async () => {

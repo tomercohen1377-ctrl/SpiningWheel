@@ -1,4 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Library manifest for `react-native-spinwheel`.
+
+  - INTERNET permission: OkHttp needs this for the JSON fetch and the
+    image downloads.
+
+  - GlanceAppWidgetReceiver `com.example.spinwheel.ui.SpinWheelWidgetReceiver`
+    is declared so that after publication as a `.tgz`, `npm install` →
+    autolinking → APK build merges it into the host app's manifest. The
+    Android launcher then discovers the Spin Wheel in its widget picker.
+
+  - No `<intent-filter>` for the LAUNCHER activity — this library does not
+    provide an Activity of its own. The host app's `MainActivity` remains
+    the entry point.
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <application>
+        <receiver
+            android:name="com.example.spinwheel.ui.SpinWheelWidgetReceiver"
+            android:label="@string/spin_wheel_widget_description"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/spin_wheel_widget_info" />
+        </receiver>
+    </application>
 </manifest>

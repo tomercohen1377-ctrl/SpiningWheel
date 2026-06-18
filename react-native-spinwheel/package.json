@@ -1,7 +1,7 @@
 {
   "name": "react-native-spinwheel",
-  "version": "1.0.1",
-  "description": "Android home-screen Spin Wheel widget manager for React Native. Downloads assets from Drive, caches them, and keeps the widget in sync.",
+  "version": "1.0.5",
+  "description": "Android home-screen Spin Wheel widget for React Native. Self-contained SDK: JS bridge + Glance widget UI + asset pipeline (use bridge URLs, no Firebase).",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [
@@ -21,7 +21,8 @@
     "home-screen",
     "spin-wheel",
     "kotlin",
-    "glance"
+    "glance",
+    "sdk"
   ],
   "peerDependencies": {
     "react": "*",

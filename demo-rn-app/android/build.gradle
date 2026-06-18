@@ -24,8 +24,16 @@ buildscript {
     dependencies {
         // AGP 8.6.0 — pinned to RN 0.76's tested version.
         classpath("com.android.tools.build:gradle:8.6.0")
-        // Kotlin 1.9.24 — pinned.
+        // Kotlin 1.9.24 — pinned. Compose compilation is integrated here
+        // (via `buildFeatures.compose = true` + `composeOptions.kotlinCompilerExtensionVersion`)
+        // for the Kotlin 1.9.x line — there is no separate
+        // `compose-compiler-gradle-plugin` artifact at 1.9.24.
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24")
+        // Kotlin serialization compiler plugin — needed because the
+        // `react-native-spinwheel` SDK applies it (for `@Serializable` data
+        // classes in `com.example.spinwheel.data.WheelConfig`).
+        // This is a SEPARATE artifact from `kotlin-gradle-plugin`.
+        classpath("org.jetbrains.kotlin:kotlin-serialization:1.9.24")
         // NOTE: no classpath for "com.facebook.react:react-native-gradle-plugin".
         // That Maven coordinate doesn't exist; the plugin ID is contributed
         // by the includeBuild in settings.gradle.

@@ -10,7 +10,7 @@
   "dependencies": {
     "react": "18.3.1",
     "react-native": "0.76.5",
-    "react-native-spinwheel": "file:../react-native-spinwheel/react-native-spinwheel-1.0.1.tgz"
+    "react-native-spinwheel": "file:../react-native-spinwheel/react-native-spinwheel-1.0.5.tgz"
   },
   "devDependencies": {
     "@babel/core": "^7.23.0",

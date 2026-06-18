@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AppWidget provider metadata for the Spin Wheel home-screen widget.
+  Sized for ~3×3 cells on a typical phone launcher.
+  updatePeriodMillis=43200000 ms = every 12 h (Android minimum is 30 min).
+  widgetCategory="home_screen" makes the widget appear in the launcher picker.
+-->
+<appwidget-provider
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="250dp"
+    android:updatePeriodMillis="43200000"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/spin_wheel_widget_description" />

@@ -21,5 +21,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          The Spin Wheel widget receiver is registered by the
+          `react-native-spinwheel` library manifest. AGP's manifest-merger
+          pulls it in automatically, so we don't redeclare it here.
+        -->
     </application>
 </manifest>

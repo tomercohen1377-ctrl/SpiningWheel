@@ -1,8 +1,8 @@
 package com.spinwheel
 
 import com.example.spinwheel.SpinWheelAssets
-import com.example.spinwheel.SpinWheelWidgetReceiver
 import com.example.spinwheel.WidgetSyncService
+import com.example.spinwheel.ui.SpinWheelWidgetReceiver
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -13,25 +13,23 @@ import com.facebook.react.bridge.ReactMethod
  *
  * | Method                    | Description                                       |
  * |---------------------------|---------------------------------------------------|
- * | `syncWidgetConfiguration` | Download JSON + 4 images → cache → refresh widget |
- * | `getLastFetchTime`        | Epoch-ms of last successful sync (0 if never)     |
- * | `clearCache`              | Remove all cached images + reset timestamp        |
+ * | `syncWidgetConfiguration` | Download JSON + 4 images → cache → refresh widget  |
+ * | `getLastFetchTime`        | Epoch-ms of last successful sync (0 if never)      |
+ * | `clearCache`              | Remove all cached images + reset timestamp         |
+ * | `requestWidgetUpdate`     | Ask every pinned widget instance to re-render      |
  */
 class SpinWheelModule(
-    private val reactContext: ReactApplicationContext
+    private val reactContext: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(reactContext) {
 
     override fun getName(): String = "SpinWheelModule"
 
     /**
-     * Syncs the widget assets from Google Drive.
+     * Syncs the widget assets from the host app's URL.
      *
-     * @param configUrl  Remote JSON config URL (for spin duration / settings).
-     * @param bgUrl      Direct download URL for the background image.
-     * @param wheelUrl   Direct download URL for the spinning wheel image.
-     * @param frameUrl   Direct download URL for the static frame overlay.
-     * @param spinUrl    Direct download URL for the spin button image.
-     * @param promise    Resolves `true` on success; rejects on failure.
+     * Runs on a dedicated `Thread` because:
+     * 1. RN `@ReactMethod` calls come on the Native Modules thread,
+     * 2. OkHttp + image decoding + disk I/O must not block it.
      */
     @ReactMethod
     fun syncWidgetConfiguration(
@@ -40,7 +38,7 @@ class SpinWheelModule(
         wheelUrl: String,
         frameUrl: String,
         spinUrl: String,
-        promise: Promise
+        promise: Promise,
     ) {
         Thread {
             try {
@@ -48,11 +46,12 @@ class SpinWheelModule(
                     bgUrl    = bgUrl,
                     wheelUrl = wheelUrl,
                     frameUrl = frameUrl,
-                    spinUrl  = spinUrl
+                    spinUrl  = spinUrl,
                 )
-                val success = WidgetSyncService(reactContext).fetchAndCache(configUrl, assets)
+                val success = WidgetSyncService.fetchAndCache(
+                    reactContext, configUrl, assets,
+                )
                 if (success) {
-                    SpinWheelWidgetReceiver.requestUpdate(reactContext)
                     promise.resolve(true)
                 } else {
                     promise.reject("SYNC_ERROR", "Asset download failed — check logs.")
@@ -66,7 +65,8 @@ class SpinWheelModule(
     @ReactMethod
     fun getLastFetchTime(promise: Promise) {
         try {
-            promise.resolve(WidgetSyncService(reactContext).getLastFetchTime().toDouble())
+            val ts = WidgetSyncService.lastFetchEpoch(reactContext)
+            promise.resolve(ts.toDouble())
         } catch (e: Exception) {
             promise.reject("PREFS_ERROR", e.localizedMessage ?: "Unknown error", e)
         }
@@ -76,11 +76,27 @@ class SpinWheelModule(
     fun clearCache(promise: Promise) {
         Thread {
             try {
-                WidgetSyncService(reactContext).clearCache()
+                kotlinx.coroutines.runBlocking {
+                    com.example.spinwheel.di.SpinWheelGraph
+                        .get(reactContext)
+                        .repository
+                        .clear()
+                }
+                SpinWheelWidgetReceiver.requestUpdate(reactContext)
                 promise.resolve(true)
             } catch (e: Exception) {
                 promise.reject("CLEAR_ERROR", e.localizedMessage ?: "Unknown error", e)
             }
         }.start()
+    }
+
+    @ReactMethod
+    fun requestWidgetUpdate(promise: Promise) {
+        try {
+            SpinWheelWidgetReceiver.requestUpdate(reactContext)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("UPDATE_ERROR", e.localizedMessage ?: "Unknown error", e)
+        }
     }
 }
